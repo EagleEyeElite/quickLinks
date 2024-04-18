@@ -1,0 +1,16 @@
+services:
+  go-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "80:8080"
+    restart: unless-stopped
+  dev:
+    profiles: ["hot-reload"]
+    image: cosmtrek/air
+    working_dir: /project-package
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./:/project-package/
