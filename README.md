@@ -13,5 +13,5 @@ Before you begin, ensure you have the following installed on your system:
 
 - Development (port 8080):
     ``` bash
-    docker compose --profile hot-reload up dev
+    docker compose --profile hot-reload up dev db pgadmin
     ```

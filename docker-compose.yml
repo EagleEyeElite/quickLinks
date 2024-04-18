@@ -1,11 +1,39 @@
 services:
-  go-app:
+  quick-links:
     build:
       context: .
       dockerfile: Dockerfile
     ports:
       - "80:8080"
     restart: unless-stopped
+    environment:
+      - DATABASE_URL=postgres://user:password@db:5432/quick_links
+
+  db:
+    image: postgres:13
+    environment:
+      POSTGRES_DB: quick_links
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5432:5432"
+    volumes:
+      - quick-links-db:/var/lib/postgresql/data
+
+  pgadmin:
+    image: dpage/pgadmin4
+    environment:
+      PGADMIN_DEFAULT_EMAIL: "admin@example.com"
+      PGADMIN_DEFAULT_PASSWORD: "admin"
+    ports:
+      - "5050:80"
+    depends_on:
+      - db
+    restart: unless-stopped
+    volumes:
+      - pgadmin-data:/var/lib/pgadmin
+
+
   dev:
     profiles: ["hot-reload"]
     image: cosmtrek/air
@@ -14,3 +42,7 @@ services:
       - "8080:8080"
     volumes:
       - ./:/project-package/
+
+volumes:
+  quick-links-db:
+  pgadmin-data:
