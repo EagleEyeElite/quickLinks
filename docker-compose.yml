@@ -5,6 +5,8 @@ services:
       dockerfile: Dockerfile
     ports:
       - "80:8080"
+    depends_on:
+      - db
     restart: unless-stopped
     environment:
       - DATABASE_URL=postgres://user:password@db:5432/quick_links
@@ -19,6 +21,7 @@ services:
       - "5432:5432"
     volumes:
       - quick-links-db:/var/lib/postgresql/data
+      - ./db/init_db.sql:/docker-entrypoint-initdb.d/init_db.sql
 
   pgadmin:
     image: dpage/pgadmin4
@@ -34,12 +37,14 @@ services:
       - pgadmin-data:/var/lib/pgadmin
 
 
-  dev:
+  quick-links-dev:
     profiles: ["hot-reload"]
     image: cosmtrek/air
     working_dir: /project-package
     ports:
       - "8080:8080"
+    depends_on:
+      - db
     volumes:
       - ./:/project-package/
 
