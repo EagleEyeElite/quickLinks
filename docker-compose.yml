@@ -4,23 +4,21 @@ services:
       context: .
       dockerfile: Dockerfile
     ports:
-      - "80:8080"
+      - ${QUICK_LINKS_PORT}:8080
     depends_on:
       - db
     restart: unless-stopped
-    environment:
-      - DATABASE_URL=postgres://user:password@db:5432/quick_links
     profiles:
       - production
 
   db:
     image: postgres:13
     environment:
-      POSTGRES_DB: quick_links
-      POSTGRES_USER: user
-      POSTGRES_PASSWORD: password
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
     ports:
-      - "8081:5432"
+      - ${POSTGRES_DB_PORT}:5432
     volumes:
       - quick-links-db:/var/lib/postgresql/data
       - ./db/init_db.sql:/docker-entrypoint-initdb.d/init_db.sql
@@ -30,27 +28,35 @@ services:
       - debugging
 
   pgadmin:
-    image: dpage/pgadmin4
+    image: dpage/pgadmin4:8
     environment:
-      PGADMIN_DEFAULT_EMAIL: "admin@example.com"
-      PGADMIN_DEFAULT_PASSWORD: "admin"
+      - ENVIRONMENT=${ENVIRONMENT}
+      - PGADMIN_DEFAULT_EMAIL=${PGADMIN_DEFAULT_EMAIL}
+      - PGADMIN_DEFAULT_PASSWORD=${PGADMIN_DEFAULT_PASSWORD}
+      - POSTGRES_HOST=db
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
     ports:
-      - "8082:80"
+      - ${PGADMIN_PORT}:80
     depends_on:
       - db
     restart: unless-stopped
+    user: root
     volumes:
+      - ./pgadmin/entrypoint.sh:/entrypoint_custom.sh
       - pgadmin-data:/var/lib/pgadmin
     profiles:
       - production
       - development
       - debugging
+    entrypoint: /entrypoint_custom.sh
 
   quick-links-dev:
-    image: cosmtrek/air
+    image: cosmtrek/air:v1.51.0
     working_dir: /project-package
     ports:
-      - "8080:8080"
+      - ${QUICK_LINKS_PORT}:8080
     depends_on:
       - db
     volumes:
@@ -63,8 +69,8 @@ services:
       context: .
       dockerfile: debug/Dockerfile
     ports:
-      - "8080:8080" # Application port
-      - "8083:2345" # Debugging port
+      - ${QUICK_LINKS_PORT}:8080 # Application port
+      - ${QUICK_LINKS_REMOTE_DEBUG_PORT}:2345 # Debugging port
     depends_on:
       - db
     volumes:

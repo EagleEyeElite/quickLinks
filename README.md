@@ -11,8 +11,13 @@ Before you begin, ensure you have the following installed on your system:
 ### Quick Start
 - To start up the application on port 80:
   ```bash
+  cp .env.example .env
   docker compose --profile production up
   ```
+  [Database](http://localhost:8082/) default credetianls:
+  - user: ```admin@example.com```
+  - pw: ```admin```
+
   
   or with make
   ```bash
@@ -39,6 +44,5 @@ Before you begin, ensure you have the following installed on your system:
 
 - To stop all containers and remove all volumes (full cleanup):
   ```bash
-  make remove
+  make clean
   ```
-  
