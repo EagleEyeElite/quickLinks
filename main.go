@@ -27,12 +27,19 @@ func init() {
 	}
 }
 
-func helloHandler(w http.ResponseWriter, r *http.Request) {
-	log.Println("handling hello request...")
+func redirectHandler(w http.ResponseWriter, r *http.Request) {
+	log.Printf("Handling request for path: %s", r.URL.Path)
 
-	// Query the database.
+	// Remove the leading slash from path and check for empty path
+	path := r.URL.Path[1:]
+	if path == "" {
+		http.Error(w, "No path specified", http.StatusBadRequest)
+		return
+	}
+
+	// Query the database for the redirect URL based on the path
 	var redirectURL string
-	err := db.QueryRow("SELECT redirect_url FROM redirects WHERE path = $1", "home").Scan(&redirectURL)
+	err := db.QueryRow("SELECT redirect_url FROM redirects WHERE path = $1", path).Scan(&redirectURL)
 	if err != nil {
 		switch {
 		case errors.Is(err, sql.ErrNoRows):
@@ -44,17 +51,13 @@ func helloHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Send back the redirect URL.
-	_, err = fmt.Fprintf(w, "Redirect to: %s", redirectURL)
-	if err != nil {
-		log.Printf("Failed to write response: %v", err)
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-		return
-	}
+	// Redirect to the fetched URL
+	log.Printf("redirecting to: %v", redirectURL)
+	http.Redirect(w, r, redirectURL, http.StatusSeeOther)
 }
 
 func main() {
-	http.HandleFunc("/", helloHandler) // Set the handler for the root URL
+	http.HandleFunc("/", redirectHandler) // Set the handler for the root URL
 
 	fmt.Println("Server starting on port 8080...")
 	log.Fatal(http.ListenAndServe(":8080", nil)) // Start the server on port 8080
