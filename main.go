@@ -15,8 +15,17 @@ var db *sql.DB
 
 func init() {
 	var err error
-	// Set up the database connection.
-	db, err = sql.Open("postgres", "postgres://user:password@db/quick_links?sslmode=disable")
+
+	// Retrieve environment variables.
+	postgresUser := os.Getenv("POSTGRES_USER")
+	postgresPassword := os.Getenv("POSTGRES_PASSWORD")
+	postgresDB := os.Getenv("POSTGRES_DB") // Database name
+
+	// Set up the database connection string using environment variables.
+	connectionString := fmt.Sprintf("postgres://%s:%s@db/%s?sslmode=disable", postgresUser, postgresPassword, postgresDB)
+
+	// Open the database connection.
+	db, err = sql.Open("postgres", connectionString)
 	if err != nil {
 		log.Fatal(err)
 	}

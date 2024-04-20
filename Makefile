@@ -10,7 +10,7 @@ check-env:
 	fi
 
 production: check-env
-	docker compose --profile production up
+	docker compose --profile production up --build -d
 
 dev: check-env
 	docker compose --profile development up --build

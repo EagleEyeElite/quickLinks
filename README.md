@@ -46,3 +46,7 @@ Before you begin, ensure you have the following installed on your system:
   ```bash
   make clean
   ```
+
+### Tips for generating QR Codes
+
+- [QR Generator](https://www.qrcode-monkey.com/)
