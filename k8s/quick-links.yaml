@@ -1,0 +1,75 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: quick-links
+  labels:
+    app: quick-links
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: quick-links
+  template:
+    metadata:
+      labels:
+        app: quick-links
+    spec:
+      containers:
+        - name: app
+          image: localhost/quick-links:latest
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 8080
+          env:
+            - name: POSTGRES_HOST
+              value: db
+          envFrom:
+            - secretRef:
+                name: quicklinks-postgres
+          resources:
+            requests:
+              cpu: "10m"
+              memory: "16Mi"
+            limits:
+              memory: "64Mi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: quick-links
+spec:
+  type: ClusterIP
+  selector:
+    app: quick-links
+  ports:
+    - port: 80
+      targetPort: 8080
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: quick-links
+spec:
+  ingressClassName: nginx
+  rules:
+    # Public access — both `goto.*` and `qr.*` aliases route to the same app
+    - host: goto.conrad-klaus.de
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: quick-links
+                port:
+                  number: 80
+    - host: qr.conrad-klaus.de
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: quick-links
+                port:
+                  number: 80

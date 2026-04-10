@@ -1,0 +1,86 @@
+---
+# init_db.sql as a ConfigMap so postgres can use it
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: db-init
+data:
+  init_db.sql: |
+    CREATE TABLE redirects (
+                               path VARCHAR(255) PRIMARY KEY,
+                               redirect_url VARCHAR(255) NOT NULL
+    );
+
+    INSERT INTO redirects (path, redirect_url) VALUES ('home', 'https://example.com');
+    INSERT INTO redirects (path, redirect_url) VALUES ('test', 'https://test.com');
+---
+# Persistent storage for postgres data
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: db-data
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: local-path
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: db
+  labels:
+    app: db
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate  # PVC is RWO; can't have two pods running at once
+  selector:
+    matchLabels:
+      app: db
+  template:
+    metadata:
+      labels:
+        app: db
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:13
+          ports:
+            - containerPort: 5432
+          envFrom:
+            - secretRef:
+                name: quicklinks-postgres
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+            - name: init
+              mountPath: /docker-entrypoint-initdb.d
+          resources:
+            requests:
+              cpu: "20m"
+              memory: "64Mi"
+            limits:
+              memory: "256Mi"
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: db-data
+        - name: init
+          configMap:
+            name: db-init
+---
+# ClusterIP service — never exposed via Ingress (private to cluster)
+apiVersion: v1
+kind: Service
+metadata:
+  name: db
+spec:
+  type: ClusterIP
+  selector:
+    app: db
+  ports:
+    - port: 5432
+      targetPort: 5432
