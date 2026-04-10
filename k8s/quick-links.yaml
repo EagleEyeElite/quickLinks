@@ -16,8 +16,8 @@ spec:
     spec:
       containers:
         - name: app
-          image: localhost/quick-links:latest
-          imagePullPolicy: Never
+          image: registry.k8s.ts.conrad-klaus.de/quick-links:latest
+          imagePullPolicy: Always
           ports:
             - containerPort: 8080
           env:
