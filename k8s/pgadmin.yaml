@@ -67,6 +67,13 @@ spec:
     spec:
       securityContext:
         runAsUser: 0
+      tolerations:
+        - key: "workload-type"
+          operator: "Equal"
+          value: "untrusted"
+          effect: "NoSchedule"
+      nodeSelector:
+        kubernetes.io/hostname: k3s-apps
       containers:
         - name: pgadmin
           image: dpage/pgadmin4:8
@@ -113,12 +120,19 @@ spec:
       targetPort: 80
 ---
 # Tailscale-only ingress — Caddy tailscale-proxy forwards here
+# cert-manager DNS-01 via Cloudflare works even for private/TS-only domains
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: quicklinks-pgadmin
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-cloudflare
 spec:
   ingressClassName: nginx
+  tls:
+    - hosts:
+        - pgadmin.ts.conrad-klaus.de
+      secretName: pgadmin-tls
   rules:
     - host: pgadmin.ts.conrad-klaus.de
       http:

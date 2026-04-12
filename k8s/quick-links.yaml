@@ -14,6 +14,13 @@ spec:
       labels:
         app: quick-links
     spec:
+      tolerations:
+        - key: "workload-type"
+          operator: "Equal"
+          value: "untrusted"
+          effect: "NoSchedule"
+      nodeSelector:
+        kubernetes.io/hostname: k3s-apps
       containers:
         - name: app
           image: registry.k8s.ts.conrad-klaus.de/quick-links:latest
@@ -49,8 +56,17 @@ apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: quick-links
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-cloudflare
 spec:
   ingressClassName: nginx
+  tls:
+    - hosts:
+        - goto.conrad-klaus.de
+      secretName: goto-tls
+    - hosts:
+        - qr.conrad-klaus.de
+      secretName: qr-tls
   rules:
     # Public access — both `goto.*` and `qr.*` aliases route to the same app
     - host: goto.conrad-klaus.de
