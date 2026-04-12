@@ -1,5 +1,7 @@
 # Start from the official Golang base image for the build stage
-FROM golang:1.22-alpine as builder
+# 2026-04-12: Updated from 1.22 to 1.24 to fix CVE-2025-68121 (crypto/tls
+# incorrect certificate validation during TLS session resumption).
+FROM golang:1.24-alpine as builder
 
 # Set the Current Working Directory inside the container
 WORKDIR /app
