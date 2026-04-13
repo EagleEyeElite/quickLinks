@@ -67,13 +67,8 @@ spec:
     spec:
       securityContext:
         runAsUser: 0
-      tolerations:
-        - key: "workload-type"
-          operator: "Equal"
-          value: "untrusted"
-          effect: "NoSchedule"
-      nodeSelector:
-        kubernetes.io/hostname: k3s-apps
+      # pgadmin is an admin tool — runs on the server node (where PVC is bound)
+      # No untrusted toleration needed.
       containers:
         - name: pgadmin
           image: dpage/pgadmin4:8

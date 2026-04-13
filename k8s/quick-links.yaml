@@ -20,7 +20,7 @@ spec:
           value: "untrusted"
           effect: "NoSchedule"
       nodeSelector:
-        kubernetes.io/hostname: k3s-apps
+        kubernetes.io/hostname: k3s-apps-vm
       containers:
         - name: app
           image: registry.k8s.ts.conrad-klaus.de/quick-links:latest
