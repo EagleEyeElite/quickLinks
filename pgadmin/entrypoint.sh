@@ -41,10 +41,14 @@ cat << EOF > $SERVERS_JSON_PATH
 }
 EOF
 
+# PGADMIN_SERVER_JSON_FILE tells the default entrypoint to import the server
+# list on startup. Needed so OAuth2 auto-created users also get the server
+# registered (without this, only the initial admin account sees it).
+export PGADMIN_SERVER_JSON_FILE="$SERVERS_JSON_PATH"
+
 echo "$SERVERS_JSON_PATH file created successfully."
 cat $SERVERS_JSON_PATH
 
 echo "Starting pgAdmin4..."
 exec /entrypoint.sh
-echo "pgAdmin4 started."
 

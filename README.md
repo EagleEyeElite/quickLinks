@@ -14,9 +14,18 @@ Before you begin, ensure you have the following installed on your system:
   cp .env.example .env
   docker compose --profile production up
   ```
-  [Database](http://localhost:8082/) default credetianls:
-  - user: ```admin@example.com```
-  - pw: ```admin```
+
+### pgAdmin Access
+
+**Production (k8s):** Login via Authelia OAuth2 at https://pgadmin.ts.conrad-klaus.de (Tailscale-only).
+- Authentication: Authelia SSO (internal email/password login is disabled)
+- Master password: `test`
+- OAuth2 config: [`pgadmin/config_local.py`](pgadmin/config_local.py)
+- Authelia OIDC client `pgadmin` is registered in the Authelia config (`authelia.configuration.yml`)
+
+**Local development:** [Database](http://localhost:8082/) default credentials:
+  - user: `admin@example.com`
+  - pw: `admin`
 
   
   or with make
