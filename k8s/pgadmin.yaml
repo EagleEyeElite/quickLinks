@@ -10,6 +10,24 @@ data:
     export PGADMIN_CONFIG_SERVER_MODE=True
     export PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED=True
 
+    # OAuth2 via Authelia (OIDC). pgAdmin reads PGADMIN_CONFIG_* as Python literals.
+    # OAUTH2_CLIENT_SECRET comes from the PGADMIN_OIDC_SECRET env var (set via k8s Secret).
+    export PGADMIN_CONFIG_AUTHENTICATION_SOURCES="['oauth2']"
+    export PGADMIN_CONFIG_OAUTH2_AUTO_CREATE_USER=True
+    export PGADMIN_CONFIG_OAUTH2_CONFIG="[{ \
+      'OAUTH2_NAME': 'authelia', \
+      'OAUTH2_DISPLAY_NAME': 'Login with Authelia', \
+      'OAUTH2_CLIENT_ID': 'pgadmin', \
+      'OAUTH2_CLIENT_SECRET': '${PGADMIN_OIDC_SECRET}', \
+      'OAUTH2_TOKEN_URL': 'https://auth.ts.conrad-klaus.de/api/oidc/token', \
+      'OAUTH2_AUTHORIZATION_URL': 'https://auth.ts.conrad-klaus.de/api/oidc/authorization', \
+      'OAUTH2_SERVER_METADATA_URL': 'https://auth.ts.conrad-klaus.de/.well-known/openid-configuration', \
+      'OAUTH2_USERINFO_ENDPOINT': 'userinfo', \
+      'OAUTH2_SCOPE': 'openid profile email', \
+      'OAUTH2_ICON': 'fa-shield', \
+      'OAUTH2_BUTTON_COLOR': '#4285F4', \
+    }]"
+
     SERVERS_JSON_PATH="/pgadmin4/servers.json"
     PGPASSFILE="$HOME/.pgpass"
 
