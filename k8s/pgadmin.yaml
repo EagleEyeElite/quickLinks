@@ -39,7 +39,7 @@ data:
       'OAUTH2_SERVER_METADATA_URL': 'https://auth.ts.conrad-klaus.de/.well-known/openid-configuration', \
       'OAUTH2_USERINFO_ENDPOINT': 'userinfo', \
       'OAUTH2_SCOPE': 'openid profile email', \
-      'OAUTH2_ICON': 'fa-lock', \
+      'OAUTH2_ICON': 'fa-openid', \
       'OAUTH2_BUTTON_COLOR': '#4051b5', \
     }]"
 
