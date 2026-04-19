@@ -110,6 +110,20 @@ spec:
           env:
             - name: POSTGRES_HOST
               value: db
+            # PGADMIN_OIDC_SECRET is sourced from the Pulumi-managed Secret
+            # `pgadmin-oidc` (created by personal-infrastructure/src/self-hosted/k8s.ts)
+            # rather than the app's own Secret. The canonical value lives in
+            # Pulumi config `pgadmin:oidcClientSecret` and must match the
+            # hashed `client_secret` in Authelia's configuration.yml. Sourcing
+            # it from there keeps the rotation surface in one place and
+            # avoids the 2026-04-19 bug where the app's Secret held the
+            # literal "PLACEHOLDER_WILL_BE_SET_AT_DEPLOY" after a kubectl
+            # apply because nothing ever substituted the placeholder.
+            - name: PGADMIN_OIDC_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: pgadmin-oidc
+                  key: client-secret
           envFrom:
             - secretRef:
                 name: quicklinks-postgres
