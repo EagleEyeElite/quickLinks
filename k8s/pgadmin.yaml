@@ -1,10 +1,86 @@
 ---
-# pgAdmin entrypoint script as ConfigMap (creates pgpass + servers.json from env vars)
+# pgAdmin entrypoint + self-heal script as ConfigMap.
+#
+# entrypoint.sh    — creates pgpass + servers.json from env vars, launches
+#                    oidc_cleanup.py in the background, then execs the upstream
+#                    pgAdmin entrypoint.
+#
+# oidc_cleanup.py  — makes this instance OIDC-only and keeps every OAuth user's
+#                    server tree populated.
+#
+#   Why it exists:
+#     * The dpage/pgadmin4 image requires PGADMIN_DEFAULT_EMAIL/PASSWORD and
+#       always creates an internal "bootstrap" admin on first boot — even in
+#       OAuth setups. AUTHENTICATION_SOURCES=['oauth2'] hides the internal
+#       login form, so that user can't log in, but the row stays in the
+#       sqlite `user` table as a stale record. We want it gone.
+#     * servers.json is auto-imported *only for the first user created in
+#       the container*. That's always the internal bootstrap user, never the
+#       OAuth user. So OAuth users see an empty tree unless we insert a
+#       server row for them after they first log in.
+#
+#   On every tick (60s):
+#     1. No-ops until at least one oauth2 user has logged in. This guard
+#        protects a fresh cluster: we never wipe the internal admin before
+#        the operator has had a chance to open Authelia once.
+#     2. Deletes every row where auth_source='internal' along with its
+#        server / servergroup / roles_users rows.
+#     3. For each OAuth user missing a servergroup+server, inserts a
+#        "Servers" group and a "Primary Database" entry pointing at the
+#        same host/port/db/username the servers.json block uses. Password
+#        resolution is delegated to /root/.pgpass so rotating the DB
+#        password only requires updating the Secret, not the sqlite DB.
 apiVersion: v1
 kind: ConfigMap
 metadata:
   name: pgadmin-entrypoint
 data:
+  oidc_cleanup.py: |
+    import sqlite3, time, json, os, traceback
+    DB_PATH = '/var/lib/pgadmin/pgadmin4.db'
+    PG_HOST = os.environ['POSTGRES_HOST']
+    PG_DB   = os.environ['POSTGRES_DB']
+    PG_USER = os.environ['POSTGRES_USER']
+    CONN_PARAMS = json.dumps({'sslmode': 'prefer', 'passfile': '/root/.pgpass'})
+    while True:
+        try:
+            if os.path.exists(DB_PATH):
+                c = sqlite3.connect(DB_PATH)
+                oauth = c.execute(
+                    "SELECT id, email FROM user WHERE auth_source != 'internal'"
+                ).fetchall()
+                if oauth:
+                    internal_ids = [r[0] for r in c.execute(
+                        "SELECT id FROM user WHERE auth_source = 'internal'"
+                    )]
+                    for uid in internal_ids:
+                        for tbl in ('server', 'servergroup', 'roles_users'):
+                            c.execute(f'DELETE FROM {tbl} WHERE user_id = ?', (uid,))
+                        c.execute('DELETE FROM user WHERE id = ?', (uid,))
+                    for uid, _email in oauth:
+                        if not c.execute(
+                            'SELECT 1 FROM servergroup WHERE user_id = ?', (uid,)
+                        ).fetchone():
+                            c.execute(
+                                "INSERT INTO servergroup (user_id, name) "
+                                "VALUES (?, 'Servers')", (uid,))
+                        if not c.execute(
+                            'SELECT 1 FROM server WHERE user_id = ?', (uid,)
+                        ).fetchone():
+                            sg = c.execute(
+                                'SELECT id FROM servergroup WHERE user_id = ?',
+                                (uid,)).fetchone()[0]
+                            c.execute(
+                                'INSERT INTO server (user_id, servergroup_id, '
+                                'name, host, port, maintenance_db, username, '
+                                'connection_params) VALUES '
+                                "(?, ?, 'Primary Database', ?, 5432, ?, ?, ?)",
+                                (uid, sg, PG_HOST, PG_DB, PG_USER, CONN_PARAMS))
+                    c.commit()
+                c.close()
+        except Exception:
+            traceback.print_exc()
+        time.sleep(60)
   entrypoint.sh: |
     #!/bin/sh
     export PGADMIN_CONFIG_SERVER_MODE=True
@@ -65,6 +141,11 @@ data:
         }
     }
     EOF
+
+    # Background self-heal loop (see oidc_cleanup.py in this ConfigMap).
+    # Disown via setsid so signals to the upstream pgAdmin entrypoint below
+    # don't also kill the cleanup; it exits naturally when the pod does.
+    setsid python3 /pgadmin4/oidc_cleanup.py &
 
     exec /entrypoint.sh
 ---
@@ -134,6 +215,9 @@ spec:
             - name: entrypoint
               mountPath: /entrypoint_custom.sh
               subPath: entrypoint.sh
+            - name: entrypoint
+              mountPath: /pgadmin4/oidc_cleanup.py
+              subPath: oidc_cleanup.py
           resources:
             requests:
               cpu: "20m"
