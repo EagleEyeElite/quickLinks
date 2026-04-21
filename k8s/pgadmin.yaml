@@ -253,6 +253,13 @@ metadata:
   name: quicklinks-pgadmin
   annotations:
     cert-manager.io/cluster-issuer: letsencrypt-cloudflare
+    # Tailscale-only — pgAdmin is a DB admin tool that must never be
+    # reachable from the public internet. Deny-by-default in the cluster's
+    # HelmChartConfig would land it on websecure-ts anyway, but making the
+    # annotation explicit prevents accidental public exposure if the
+    # cluster default is ever flipped (or the Ingress is copied to a stack
+    # where the default differs).
+    traefik.ingress.kubernetes.io/router.entrypoints: "websecure-ts"
 spec:
   ingressClassName: traefik
   tls:

@@ -58,6 +58,14 @@ metadata:
   name: quick-links
   annotations:
     cert-manager.io/cluster-issuer: letsencrypt-cloudflare
+    # Opt into the public entrypoints. Without this annotation Traefik's
+    # deny-by-default config (k3s HelmChartConfig in personal-infrastructure
+    # src/self-hosted/k8s.ts) would attach this router only to websecure-ts,
+    # making the goto.*/qr.* short-link service Tailscale-only. The web
+    # entrypoint picks up port-80 requests and redirects via the
+    # entrypoint-level redirectTo, so clients typing `goto.conrad-klaus.de`
+    # without https:// still land on HTTPS.
+    traefik.ingress.kubernetes.io/router.entrypoints: "web,websecure"
 spec:
   ingressClassName: traefik
   tls:
