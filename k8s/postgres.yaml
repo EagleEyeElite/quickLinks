@@ -45,6 +45,16 @@ spec:
       labels:
         app: db
     spec:
+      # Runs on the untrusted apps VM alongside the quick-links frontend so the
+      # Postgres data volume sits behind the same trust boundary as the pods
+      # that read it. The k3s LXC is reserved for privileged workloads.
+      tolerations:
+        - key: "workload-type"
+          operator: "Equal"
+          value: "untrusted"
+          effect: "NoSchedule"
+      nodeSelector:
+        kubernetes.io/hostname: k3s-apps-vm
       containers:
         - name: postgres
           image: postgres:13
