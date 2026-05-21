@@ -17,7 +17,7 @@ Before you begin, ensure you have the following installed on your system:
 
 ### pgAdmin Access
 
-**Production (k8s):** Login via Authelia OAuth2 at https://pgadmin.ts.conrad-klaus.de (Tailscale-only).
+**Production (k8s):** Login via Authelia OAuth2 at https://pgadmin.gated.conrad-klaus.de (Tailscale-only).
 - Authentication: Authelia SSO (internal email/password login is disabled)
 - Master password: `test`
 - OAuth2 config: [`pgadmin/config_local.py`](pgadmin/config_local.py)

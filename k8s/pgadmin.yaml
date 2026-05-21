@@ -98,7 +98,7 @@ data:
     export PGADMIN_CONFIG_OAUTH2_AUTO_CREATE_USER=True
     # Traefik terminates TLS and forwards as HTTP — have Flask honour
     # X-Forwarded-* so the OAuth2 redirect_uri is built with the public
-    # https://pgadmin.ts.conrad-klaus.de host instead of the in-cluster one.
+    # https://pgadmin.gated.conrad-klaus.de host instead of the in-cluster one.
     export PGADMIN_CONFIG_PROXY_X_HOST_COUNT=1
     export PGADMIN_CONFIG_PROXY_X_PROTO_COUNT=1
     export PGADMIN_CONFIG_PROXY_X_FOR_COUNT=1
@@ -109,10 +109,10 @@ data:
       'OAUTH2_DISPLAY_NAME': 'Authelia', \
       'OAUTH2_CLIENT_ID': 'pgadmin', \
       'OAUTH2_CLIENT_SECRET': '${PGADMIN_OIDC_SECRET}', \
-      'OAUTH2_TOKEN_URL': 'https://auth.ts.conrad-klaus.de/api/oidc/token', \
-      'OAUTH2_AUTHORIZATION_URL': 'https://auth.ts.conrad-klaus.de/api/oidc/authorization', \
-      'OAUTH2_API_BASE_URL': 'https://auth.ts.conrad-klaus.de/api/oidc/', \
-      'OAUTH2_SERVER_METADATA_URL': 'https://auth.ts.conrad-klaus.de/.well-known/openid-configuration', \
+      'OAUTH2_TOKEN_URL': 'https://auth.gated.conrad-klaus.de/api/oidc/token', \
+      'OAUTH2_AUTHORIZATION_URL': 'https://auth.gated.conrad-klaus.de/api/oidc/authorization', \
+      'OAUTH2_API_BASE_URL': 'https://auth.gated.conrad-klaus.de/api/oidc/', \
+      'OAUTH2_SERVER_METADATA_URL': 'https://auth.gated.conrad-klaus.de/.well-known/openid-configuration', \
       'OAUTH2_USERINFO_ENDPOINT': 'userinfo', \
       'OAUTH2_SCOPE': 'openid profile email', \
       'OAUTH2_ICON': 'fa-openid', \
@@ -264,10 +264,10 @@ spec:
   ingressClassName: traefik
   tls:
     - hosts:
-        - pgadmin.ts.conrad-klaus.de
+        - pgadmin.gated.conrad-klaus.de
       secretName: pgadmin-tls
   rules:
-    - host: pgadmin.ts.conrad-klaus.de
+    - host: pgadmin.gated.conrad-klaus.de
       http:
         paths:
           - path: /
