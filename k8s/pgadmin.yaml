@@ -221,9 +221,12 @@ spec:
           resources:
             requests:
               cpu: "20m"
-              memory: "64Mi"
-            limits:
+              # Trued-up 2026-06-04: measured p90 working set ~193Mi —
+              # the old 64Mi request was fiction, and 193Mi against the
+              # old 256Mi limit was 75% of the way to an OOMKill.
               memory: "256Mi"
+            limits:
+              memory: "512Mi"
       volumes:
         - name: data
           persistentVolumeClaim:
