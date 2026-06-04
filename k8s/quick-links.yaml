@@ -66,6 +66,10 @@ metadata:
     # entrypoint-level redirectTo, so clients typing `goto.conrad-klaus.de`
     # without https:// still land on HTTPS.
     traefik.ingress.kubernetes.io/router.entrypoints: "web,websecure"
+    # Coraza+OWASP-CRS WAF (DetectionOnly soak, 2026-06-05). Middleware
+    # lives in kube-system (personal-infrastructure k8s.ts); referenced
+    # cross-namespace. First in the chain so it inspects every request.
+    traefik.ingress.kubernetes.io/router.middlewares: "kube-system-coraza-waf@kubernetescrd"
 spec:
   ingressClassName: traefik
   tls:
