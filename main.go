@@ -63,22 +63,12 @@ func redirectHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func serve404(w http.ResponseWriter) {
-	log.Printf("Serving 404 page")
-	page, err := os.ReadFile("static/404.html")
-	if err != nil {
-		log.Printf("Error loading 404 page: %v", err)
-		http.Error(w, "404 Not Found", http.StatusNotFound)
-		return
-	}
-
-	w.WriteHeader(http.StatusNotFound)
-	if _, err := w.Write(page); err != nil {
-		// Log the error if the response can't be written
-		log.Printf("Failed to write 404 page to response: %v", err)
-		// Return a standard HTTP 500 Internal Server Error as a fallback
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-		return
-	}
+	log.Printf("Serving 404")
+	// Deliberately a plain-text "404 Not Found" returned as a proper HTTP 404
+	// response (status code + text/plain body) — preferred over a styled HTML
+	// error page. http.Error sets the status and writes the text in one call,
+	// so there's no static asset to ship (see Dockerfile / removed static/).
+	http.Error(w, "404 Not Found", http.StatusNotFound)
 }
 
 func main() {

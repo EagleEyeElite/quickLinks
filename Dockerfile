@@ -26,12 +26,8 @@ WORKDIR /root/
 # Copy the Pre-built binary file from the previous stage
 COPY --from=builder /app/main .
 
-# Copy the static assets too. main.go serves static/404.html via a path RELATIVE
-# to the working dir (/root), so without this the custom 404 page fails at
-# runtime with "open static/404.html: no such file or directory" and the handler
-# falls back to a plain-text 404. The scratch final stage copies nothing by
-# default, so this COPY is required.
-COPY --from=builder /app/static ./static
+# No static assets to copy: serve404 returns a plain-text HTTP 404 inline
+# (main.go), so the scratch image needs only the binary.
 
 # Expose port 8080 to the outside world
 EXPOSE 8080
