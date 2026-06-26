@@ -66,6 +66,14 @@ metadata:
     # entrypoint-level redirectTo, so clients typing `goto.conrad-klaus.de`
     # without https:// still land on HTTPS.
     traefik.ingress.kubernetes.io/router.entrypoints: "web,websecure"
+    # cloudflare-only WAF allowlist. Required since 2026-06-26: it moved off
+    # the Traefik websecure entrypoint default to a per-public-router
+    # middleware (so the unlisted hanna.hidden host could opt out — Traefik
+    # can't exempt one router from an entrypoint middleware). Without this,
+    # goto.*/qr.* are reachable directly on the WAN IP, bypassing the
+    # Cloudflare WAF. Middleware lives in kube-system (personal-infrastructure).
+    # Apply this manifest BEFORE `pulumi up` removes the entrypoint default.
+    traefik.ingress.kubernetes.io/router.middlewares: kube-system-cloudflare-only@kubernetescrd
 spec:
   ingressClassName: traefik
   tls:
