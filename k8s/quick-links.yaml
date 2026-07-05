@@ -19,6 +19,20 @@ spec:
           operator: "Equal"
           value: "untrusted"
           effect: "NoSchedule"
+        # replicas:1 pinned to k3s-apps-vm → this pod can only ever run on that
+        # one node. The default 300s not-ready/unreachable tolerations then hurt:
+        # on a node reboot (nightly autoUpgrade / longer outage) k8s evicts the
+        # pod and makes a replacement that CAN'T schedule elsewhere, leaving the
+        # original as an uncollected "Error" pod corpse. Ride out node blips (6h)
+        # and let the container restart in place instead.
+        - key: "node.kubernetes.io/not-ready"
+          operator: "Exists"
+          effect: "NoExecute"
+          tolerationSeconds: 21600
+        - key: "node.kubernetes.io/unreachable"
+          operator: "Exists"
+          effect: "NoExecute"
+          tolerationSeconds: 21600
       nodeSelector:
         kubernetes.io/hostname: k3s-apps-vm
       containers:
