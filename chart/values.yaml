@@ -92,7 +92,11 @@ secret:
     PGADMIN_DEFAULT_PASSWORD: admin
 
 pgadmin:
-  enabled: true
+  # Disabled to save memory on the Pi (requests 256Mi / limits 512Mi). Its PVC
+  # carries resource-policy:keep, so flipping this back to true restores it with
+  # its data intact. Use `kubectl exec … psql` (or the Grafana dashboards) for
+  # DB access while it's off.
+  enabled: false
   image: dpage/pgadmin4:8
   host: pgadmin.gated.conrad-klaus.de
   tlsSecret: pgadmin-tls
