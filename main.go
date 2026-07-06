@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -69,38 +70,108 @@ func hashPath(path string) string {
 	return hex.EncodeToString(sum[:])
 }
 
+// clickEvent is one resolve attempt. It is logged as a single JSON line to
+// stdout (for live `kubectl logs -f`) and persisted to the click_events table
+// for analytics ("who clicked what, when, how often"). The requested path is
+// recorded verbatim — this is an intentional access log, so a successful secret
+// path does appear here.
+type clickEvent struct {
+	Time      time.Time `json:"time"`
+	Outcome   string    `json:"outcome"` // hit | miss | rejected | error
+	Path      string    `json:"path"`
+	Label     string    `json:"label,omitempty"`
+	ClientIP  string    `json:"client_ip,omitempty"`
+	Country   string    `json:"country,omitempty"`
+	UserAgent string    `json:"user_agent,omitempty"`
+	Referrer  string    `json:"referrer,omitempty"`
+}
+
+// newEvent captures the non-body request context up front (before we respond),
+// so the record() goroutine never touches the *http.Request after the handler
+// returns. Cf-Connecting-IP / CF-IPCountry are set by Cloudflare and trustworthy
+// here because the cloudflare-only middleware guarantees traffic came via CF.
+func newEvent(r *http.Request, path string) *clickEvent {
+	return &clickEvent{
+		Time:      time.Now().UTC(),
+		Path:      path,
+		ClientIP:  r.Header.Get("Cf-Connecting-IP"),
+		Country:   r.Header.Get("Cf-IPCountry"),
+		UserAgent: r.UserAgent(),
+		Referrer:  r.Referer(),
+	}
+}
+
+// record emits the event to stdout immediately, then persists it in the
+// background. The DB write is deliberately off the request path: a slow or
+// failing insert must never delay or break a redirect (best-effort logging).
+func record(ev *clickEvent) {
+	if b, err := json.Marshal(ev); err == nil {
+		log.Printf("click %s", b)
+	}
+	go func() {
+		if err := insertEvent(ev); err != nil {
+			log.Printf("click log insert failed: %v", err)
+		}
+	}()
+}
+
+// insertEvent persists one event. Empty strings are stored as NULL.
+func insertEvent(ev *clickEvent) error {
+	_, err := db.Exec(
+		`INSERT INTO click_events (ts, outcome, path, label, client_ip, country, user_agent, referrer)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+		ev.Time, ev.Outcome, ev.Path,
+		nullify(ev.Label), nullify(ev.ClientIP), nullify(ev.Country),
+		nullify(ev.UserAgent), nullify(ev.Referrer),
+	)
+	return err
+}
+
+func nullify(s string) any {
+	if s == "" {
+		return nil
+	}
+	return s
+}
+
 func redirectHandler(w http.ResponseWriter, r *http.Request) {
+	path := strings.TrimPrefix(r.URL.Path, "/")
+	ev := newEvent(r, path)
+	defer record(ev)
+
 	// A redirector only ever answers GETs (and HEADs). Reject everything else
 	// without touching the database.
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		ev.Outcome = "rejected"
 		w.Header().Set("Allow", "GET, HEAD")
 		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
-	// Deliberately do NOT log the requested path. The path IS the secret for
-	// unguessable links; logging it would turn every log sink and backup into a
-	// disclosure channel. We log only coarse, non-sensitive outcomes below.
-	path := strings.TrimPrefix(r.URL.Path, "/")
 	if path == "" || len(path) > maxPathLen {
+		ev.Outcome = "rejected"
 		serve404(w)
 		return
 	}
 
 	var redirectURL string
-	err := db.QueryRow("SELECT redirect_url FROM redirects WHERE path_hash = $1", hashPath(path)).Scan(&redirectURL)
+	var label sql.NullString
+	err := db.QueryRow("SELECT redirect_url, label FROM redirects WHERE path_hash = $1", hashPath(path)).Scan(&redirectURL, &label)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
+			ev.Outcome = "miss"
 			serve404(w)
 		} else {
-			// Genuine infrastructure error (DB down, etc.) — not an existence
-			// signal. Log without the secret path.
+			// Genuine infrastructure error (DB down, etc.) — not an existence signal.
+			ev.Outcome = "error"
 			log.Printf("lookup failed: %v", err)
 			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		}
 		return
 	}
 
+	ev.Outcome = "hit"
+	ev.Label = label.String
 	http.Redirect(w, r, redirectURL, http.StatusSeeOther)
 }
 

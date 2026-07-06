@@ -27,3 +27,21 @@ INSERT INTO redirects (path_hash, redirect_url, label) VALUES
   ('30de18cc4ea2bf4601b4d97e3dc591d762e5bf00400e320c319a1f03821c6257', 'https://faq.example.com/help',           'faq'),
   ('093e7d5fdbaacfa92448861b11075b3fba532a07d945b49a44919252f5e830ad', 'https://contact.example.com',            'contact'),
   ('a4cc6bc01a927e2a78fd3bec51e865ac0d85e4daab6f988d5d33d056e125b1c3', 'https://privacy.example.com/policy',     'privacy');
+
+-- Access log: one row per resolve attempt. Queried for "who clicked what, when,
+-- how often" (the app also emits each event as a JSON line to stdout). The
+-- requested path is stored verbatim — this is an intentional access log. Rows
+-- are never auto-pruned; retention is a manual decision.
+CREATE TABLE click_events (
+    id         BIGSERIAL PRIMARY KEY,
+    ts         TIMESTAMPTZ NOT NULL,
+    outcome    VARCHAR(16) NOT NULL,   -- hit | miss | rejected | error
+    path       TEXT,                   -- what the visitor requested
+    label      VARCHAR(255),           -- resolved link's label, on a hit
+    client_ip  TEXT,                   -- Cf-Connecting-IP (real client)
+    country    VARCHAR(8),             -- CF-IPCountry
+    user_agent TEXT,
+    referrer   TEXT
+);
+CREATE INDEX click_events_ts_idx ON click_events (ts);
+CREATE INDEX click_events_path_idx ON click_events (path);

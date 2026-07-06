@@ -22,6 +22,22 @@ data:
     INSERT INTO redirects (path_hash, redirect_url, label) VALUES
       ('4ea140588150773ce3aace786aeef7f4049ce100fa649c94fbbddb960f1da942', 'https://example.com', 'home'),
       ('9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08', 'https://test.com',    'test');
+
+    -- Access log: one row per resolve attempt (see db/init_db.sql). Never
+    -- auto-pruned; the app also emits each event as JSON to stdout.
+    CREATE TABLE click_events (
+        id         BIGSERIAL PRIMARY KEY,
+        ts         TIMESTAMPTZ NOT NULL,
+        outcome    VARCHAR(16) NOT NULL,
+        path       TEXT,
+        label      VARCHAR(255),
+        client_ip  TEXT,
+        country    VARCHAR(8),
+        user_agent TEXT,
+        referrer   TEXT
+    );
+    CREATE INDEX click_events_ts_idx ON click_events (ts);
+    CREATE INDEX click_events_path_idx ON click_events (path);
 ---
 # Persistent storage for postgres data. resource-policy:keep so `helm uninstall`
 # (or a template removal) never deletes the volume holding every link.
