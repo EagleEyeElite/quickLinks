@@ -78,6 +78,19 @@ postgres:
   storage: 1Gi
   storageClass: local-path
 
+# Grafana integration. This repo OWNS its observability: the dashboard JSON, the
+# datasource, and a read-only DB role all live here and are auto-discovered by
+# Grafana's k8s-sidecar (enabled once in personal-infrastructure). Toggle off to
+# stop shipping the sidecar ConfigMap/Secret.
+grafana:
+  enabled: true
+  folder: Apps # Grafana folder the dashboard lands in (grafana_folder annotation)
+  datasourceUid: quicklinks-pg # referenced by the dashboard panels
+  # Read-only role Grafana connects as — SELECT on click_events only. Password in
+  # git is accepted for this repo (consistent with the postgres secret).
+  roUser: grafana_ro
+  roPassword: Rk8mQ2pLf9TzYwB3nXcV
+
 # DB + pgAdmin credentials Secret. Keeping the password in git is accepted for
 # this repo. Set create:false and point envFrom at an external Secret of the
 # same name to manage it out-of-band instead.

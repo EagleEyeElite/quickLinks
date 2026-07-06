@@ -1,0 +1,19 @@
+{{- if .Values.grafana.enabled }}
+# The click_events dashboard, defined in THIS repo. Grafana's k8s-sidecar
+# (sidecar.dashboards.enabled, set in personal-infrastructure) discovers it by
+# the grafana_dashboard="1" label and drops it into the folder named by the
+# grafana_folder annotation ("Apps"). The panels query the quicklinks-pg
+# datasource (see grafana-datasource.yaml). JSON source: files/quicklinks-dashboard.json.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: quicklinks-grafana-dashboard
+  labels:
+    grafana_dashboard: "1"
+    {{- include "quicklinks.labels" . | nindent 4 }}
+  annotations:
+    grafana_folder: {{ .Values.grafana.folder | quote }}
+data:
+  quicklinks-clicks.json: |
+{{ .Files.Get "files/quicklinks-dashboard.json" | indent 4 }}
+{{- end }}

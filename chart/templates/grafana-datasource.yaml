@@ -1,0 +1,32 @@
+{{- if .Values.grafana.enabled }}
+# Read-only Postgres datasource for the click_events dashboard. Shipped as a
+# Secret (not a ConfigMap) because it carries the grafana_ro password. Grafana's
+# k8s-sidecar (sidecar.datasources.enabled, set in personal-infrastructure)
+# discovers it by the grafana_datasource="1" label and provisions it. The whole
+# definition therefore lives in THIS repo.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: quicklinks-grafana-datasource
+  labels:
+    grafana_datasource: "1"
+    {{- include "quicklinks.labels" . | nindent 4 }}
+type: Opaque
+stringData:
+  quicklinks-datasource.yaml: |
+    apiVersion: 1
+    datasources:
+      - name: quicklinks
+        type: postgres
+        uid: {{ .Values.grafana.datasourceUid }}
+        url: db.{{ .Release.Namespace }}.svc.cluster.local:5432
+        user: {{ .Values.grafana.roUser }}
+        isDefault: false
+        editable: false
+        jsonData:
+          database: quick_links
+          sslmode: disable
+          postgresVersion: 1300
+        secureJsonData:
+          password: {{ .Values.grafana.roPassword | quote }}
+{{- end }}

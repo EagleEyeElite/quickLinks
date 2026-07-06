@@ -45,3 +45,11 @@ CREATE TABLE click_events (
 );
 CREATE INDEX click_events_ts_idx ON click_events (ts);
 CREATE INDEX click_events_path_idx ON click_events (path);
+
+-- Read-only role for the Grafana "Apps" dashboard: it may only SELECT from
+-- click_events, nothing else. Keep this password in sync with chart values
+-- (grafana.roPassword) and the Grafana datasource Secret.
+CREATE ROLE grafana_ro LOGIN PASSWORD 'Rk8mQ2pLf9TzYwB3nXcV';
+GRANT CONNECT ON DATABASE quick_links TO grafana_ro;
+GRANT USAGE ON SCHEMA public TO grafana_ro;
+GRANT SELECT ON click_events TO grafana_ro;

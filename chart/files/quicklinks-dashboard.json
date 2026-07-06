@@ -1,0 +1,86 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "graphTooltip": 0,
+  "schemaVersion": 39,
+  "tags": ["quicklinks", "apps"],
+  "title": "quick-links — clicks",
+  "uid": "quicklinks-clicks",
+  "time": { "from": "now-24h", "to": "now" },
+  "timezone": "",
+  "templating": { "list": [] },
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Total resolves",
+      "datasource": { "type": "postgres", "uid": "quicklinks-pg" },
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] } }, "overrides": [] },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "colorMode": "value", "graphMode": "area", "textMode": "value" },
+      "targets": [{ "refId": "A", "format": "table", "rawSql": "SELECT count(*) AS value FROM click_events WHERE $__timeFilter(ts)", "datasource": { "type": "postgres", "uid": "quicklinks-pg" } }]
+    },
+    {
+      "type": "stat",
+      "title": "Hits",
+      "datasource": { "type": "postgres", "uid": "quicklinks-pg" },
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] } }, "overrides": [] },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "colorMode": "value", "graphMode": "area", "textMode": "value" },
+      "targets": [{ "refId": "A", "format": "table", "rawSql": "SELECT count(*) AS value FROM click_events WHERE outcome = 'hit' AND $__timeFilter(ts)", "datasource": { "type": "postgres", "uid": "quicklinks-pg" } }]
+    },
+    {
+      "type": "stat",
+      "title": "Misses (failed guesses)",
+      "datasource": { "type": "postgres", "uid": "quicklinks-pg" },
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [{ "color": "orange", "value": null }] } }, "overrides": [] },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "colorMode": "value", "graphMode": "area", "textMode": "value" },
+      "targets": [{ "refId": "A", "format": "table", "rawSql": "SELECT count(*) AS value FROM click_events WHERE outcome = 'miss' AND $__timeFilter(ts)", "datasource": { "type": "postgres", "uid": "quicklinks-pg" } }]
+    },
+    {
+      "type": "stat",
+      "title": "Unique visitors",
+      "datasource": { "type": "postgres", "uid": "quicklinks-pg" },
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [{ "color": "purple", "value": null }] } }, "overrides": [] },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "colorMode": "value", "graphMode": "area", "textMode": "value" },
+      "targets": [{ "refId": "A", "format": "table", "rawSql": "SELECT count(DISTINCT client_ip) AS value FROM click_events WHERE $__timeFilter(ts)", "datasource": { "type": "postgres", "uid": "quicklinks-pg" } }]
+    },
+    {
+      "type": "timeseries",
+      "title": "Resolves over time (by outcome)",
+      "datasource": { "type": "postgres", "uid": "quicklinks-pg" },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 4 },
+      "fieldConfig": { "defaults": { "custom": { "drawStyle": "bars", "fillOpacity": 40, "stacking": { "mode": "normal", "group": "A" } } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [{ "refId": "A", "format": "time_series", "rawSql": "SELECT $__timeGroup(ts, '$__interval') AS time, outcome AS metric, count(*) AS value FROM click_events WHERE $__timeFilter(ts) GROUP BY 1, outcome ORDER BY 1", "datasource": { "type": "postgres", "uid": "quicklinks-pg" } }]
+    },
+    {
+      "type": "table",
+      "title": "Top links (hits)",
+      "datasource": { "type": "postgres", "uid": "quicklinks-pg" },
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 12 },
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "options": { "showHeader": true },
+      "targets": [{ "refId": "A", "format": "table", "rawSql": "SELECT coalesce(label, path) AS link, count(*) AS clicks FROM click_events WHERE outcome = 'hit' AND $__timeFilter(ts) GROUP BY 1 ORDER BY clicks DESC LIMIT 20", "datasource": { "type": "postgres", "uid": "quicklinks-pg" } }]
+    },
+    {
+      "type": "table",
+      "title": "Possible enumeration (misses by IP)",
+      "datasource": { "type": "postgres", "uid": "quicklinks-pg" },
+      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 12 },
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "options": { "showHeader": true },
+      "targets": [{ "refId": "A", "format": "table", "rawSql": "SELECT client_ip, country, count(*) AS misses FROM click_events WHERE outcome = 'miss' AND $__timeFilter(ts) GROUP BY 1, 2 ORDER BY misses DESC LIMIT 20", "datasource": { "type": "postgres", "uid": "quicklinks-pg" } }]
+    },
+    {
+      "type": "table",
+      "title": "Recent activity",
+      "datasource": { "type": "postgres", "uid": "quicklinks-pg" },
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 21 },
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "options": { "showHeader": true },
+      "targets": [{ "refId": "A", "format": "table", "rawSql": "SELECT ts AS \"time\", outcome, path, label, client_ip, country, user_agent FROM click_events WHERE $__timeFilter(ts) ORDER BY ts DESC LIMIT 100", "datasource": { "type": "postgres", "uid": "quicklinks-pg" } }]
+    }
+  ]
+}

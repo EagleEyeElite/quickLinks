@@ -38,6 +38,14 @@ data:
     );
     CREATE INDEX click_events_ts_idx ON click_events (ts);
     CREATE INDEX click_events_path_idx ON click_events (path);
+{{- if .Values.grafana.enabled }}
+
+    -- Read-only role for the Grafana dashboard (SELECT on click_events only).
+    CREATE ROLE {{ .Values.grafana.roUser }} LOGIN PASSWORD '{{ .Values.grafana.roPassword }}';
+    GRANT CONNECT ON DATABASE quick_links TO {{ .Values.grafana.roUser }};
+    GRANT USAGE ON SCHEMA public TO {{ .Values.grafana.roUser }};
+    GRANT SELECT ON click_events TO {{ .Values.grafana.roUser }};
+{{- end }}
 ---
 # Persistent storage for postgres data. resource-policy:keep so `helm uninstall`
 # (or a template removal) never deletes the volume holding every link.
