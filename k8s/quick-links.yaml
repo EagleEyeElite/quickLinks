@@ -66,6 +66,33 @@ spec:
     - port: 80
       targetPort: 8080
 ---
+# Per-client rate limit for the public goto/qr endpoints. There was previously
+# NO rate limiting anywhere (not at Cloudflare, not in Traefik, not in-app), so
+# nothing throttled path enumeration. Secret links are unguessable on entropy
+# alone (128-bit), but this caps probing as defense-in-depth — the same pattern
+# hanna uses for its /i/ invite route.
+#
+# Buckets by the REAL client IP: all origin traffic arrives from Cloudflare edge
+# IPs (enforced by the cloudflare-only middleware), so without sourceCriterion
+# Traefik would see every request as coming from ~the same handful of CF IPs and
+# rate-limit all users as one global bucket. Cf-Connecting-IP carries the true
+# client IP and is trustworthy here precisely because cloudflare-only guarantees
+# the request came through Cloudflare.
+#
+# average/burst = a sustained 10 req/s with bursts to 20 per client — generous
+# for real humans clicking links, punishing for an enumerator.
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: quicklinks-ratelimit
+spec:
+  rateLimit:
+    average: 10
+    burst: 20
+    period: 1s
+    sourceCriterion:
+      requestHeaderName: Cf-Connecting-IP
+---
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -87,7 +114,13 @@ metadata:
     # goto.*/qr.* are reachable directly on the WAN IP, bypassing the
     # Cloudflare WAF. Middleware lives in kube-system (personal-infrastructure).
     # Apply this manifest BEFORE `pulumi up` removes the entrypoint default.
-    traefik.ingress.kubernetes.io/router.middlewares: kube-system-cloudflare-only@kubernetescrd
+    #
+    # Chained in order: cloudflare-only (drop non-Cloudflare origin traffic)
+    # THEN quicklinks-ratelimit (throttle per real client IP). The rate-limit
+    # Middleware is defined in THIS file, in the same (default) namespace as this
+    # Ingress — hence the `default-` prefix. Keep it in sync if these manifests
+    # are ever applied into a different namespace.
+    traefik.ingress.kubernetes.io/router.middlewares: kube-system-cloudflare-only@kubernetescrd,default-quicklinks-ratelimit@kubernetescrd
 spec:
   ingressClassName: traefik
   tls:

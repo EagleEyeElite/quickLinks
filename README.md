@@ -56,6 +56,36 @@ Before you begin, ensure you have the following installed on your system:
   make clean
   ```
 
+### Creating secure (unguessable) links
+
+Redirects are keyed by `sha256(path)`, never the plaintext path (`db/init_db.sql`).
+So the raw path lives only in the URL you hand out — a database or backup leak
+cannot recover working links.
+
+To mint a long, unguessable link (128-bit, cryptographically random) and get the
+SQL to register it:
+
+```bash
+python3 generateLinks.py
+```
+
+Each entry prints the shareable URL plus a ready-to-paste `INSERT`. Add your real
+destination in the script (or import `sql_for(path, url, label)`). For short
+vanity links, `sql_for('home', 'https://…', 'home')` works too — just remember
+short paths are guessable by design and not secret.
+
+### Security model (short version)
+
+- **Unguessability, not secrecy of existence.** A redirector must answer
+  "does this resolve?" (303 vs 404), so existence can't be hidden — instead
+  paths are 128-bit random, making enumeration infeasible.
+- **Uniform lookups.** Every request hashes the path and does one exact-match
+  lookup on a fixed-length key, so hit/miss timing is indistinguishable.
+- **Rate limiting.** A per-client Traefik `rateLimit` middleware
+  (`k8s/quick-links.yaml`) throttles probing, keyed on the real client IP via
+  `Cf-Connecting-IP` (trustworthy behind the `cloudflare-only` allowlist).
+- **No secret in logs.** The path is never logged.
+
 ### Tips for generating QR Codes
 
 - [QR Generator](https://www.qrcode-monkey.com/)

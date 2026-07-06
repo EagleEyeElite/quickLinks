@@ -1,7 +1,15 @@
 # Start from the official Golang base image for the build stage
 # 2026-04-12: Updated from 1.22 to 1.24 to fix CVE-2025-68121 (crypto/tls
 # incorrect certificate validation during TLS session resumption).
-FROM golang:1.24-alpine as builder
+#
+# --platform=$BUILDPLATFORM pins the builder to the machine doing the build
+# (e.g. amd64 CI/laptop) and we cross-compile to $TARGETARCH below. Because the
+# binary is pure-Go (CGO_ENABLED=0), Go cross-compiles natively — no QEMU
+# emulation needed to target the arm64 Raspberry Pi. TARGETOS/TARGETARCH are
+# provided automatically by BuildKit from --platform.
+FROM --platform=$BUILDPLATFORM golang:1.24-alpine AS builder
+ARG TARGETOS
+ARG TARGETARCH
 
 # Set the Current Working Directory inside the container
 WORKDIR /app
@@ -15,8 +23,8 @@ RUN go mod download
 # Copy the source code into the container
 COPY . .
 
-# Build the Go app
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o main .
+# Build the Go app, cross-compiling to the requested target platform.
+RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -a -installsuffix cgo -o main .
 
 # Final stage, use scratch
 FROM scratch
