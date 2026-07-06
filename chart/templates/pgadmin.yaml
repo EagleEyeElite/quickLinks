@@ -1,3 +1,4 @@
+{{- if .Values.pgadmin.enabled }}
 ---
 # pgAdmin entrypoint + self-heal script as ConfigMap.
 #
@@ -6,34 +7,14 @@
 #                    pgAdmin entrypoint.
 #
 # oidc_cleanup.py  — makes this instance OIDC-only and keeps every OAuth user's
-#                    server tree populated.
-#
-#   Why it exists:
-#     * The dpage/pgadmin4 image requires PGADMIN_DEFAULT_EMAIL/PASSWORD and
-#       always creates an internal "bootstrap" admin on first boot — even in
-#       OAuth setups. AUTHENTICATION_SOURCES=['oauth2'] hides the internal
-#       login form, so that user can't log in, but the row stays in the
-#       sqlite `user` table as a stale record. We want it gone.
-#     * servers.json is auto-imported *only for the first user created in
-#       the container*. That's always the internal bootstrap user, never the
-#       OAuth user. So OAuth users see an empty tree unless we insert a
-#       server row for them after they first log in.
-#
-#   On every tick (60s):
-#     1. No-ops until at least one oauth2 user has logged in. This guard
-#        protects a fresh cluster: we never wipe the internal admin before
-#        the operator has had a chance to open Authelia once.
-#     2. Deletes every row where auth_source='internal' along with its
-#        server / servergroup / roles_users rows.
-#     3. For each OAuth user missing a servergroup+server, inserts a
-#        "Servers" group and a "Primary Database" entry pointing at the
-#        same host/port/db/username the servers.json block uses. Password
-#        resolution is delegated to /root/.pgpass so rotating the DB
-#        password only requires updating the Secret, not the sqlite DB.
+#                    server tree populated (see the long-form rationale in git
+#                    history; behaviour is unchanged from the raw manifest).
 apiVersion: v1
 kind: ConfigMap
 metadata:
   name: pgadmin-entrypoint
+  labels:
+    {{- include "quicklinks.labels" . | nindent 4 }}
 data:
   oidc_cleanup.py: |
     import sqlite3, time, json, os, traceback
@@ -153,13 +134,17 @@ apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: quicklinks-pgadmin-data
+  labels:
+    {{- include "quicklinks.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/resource-policy: keep
 spec:
   accessModes:
     - ReadWriteOnce
   resources:
     requests:
-      storage: 1Gi
-  storageClassName: local-path
+      storage: {{ .Values.pgadmin.storage }}
+  storageClassName: {{ .Values.pgadmin.storageClass }}
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -167,6 +152,7 @@ metadata:
   name: quicklinks-pgadmin
   labels:
     app: quicklinks-pgadmin
+    {{- include "quicklinks.labels" . | nindent 4 }}
 spec:
   replicas: 1
   strategy:
@@ -181,33 +167,27 @@ spec:
     spec:
       securityContext:
         runAsUser: 0
-      # pgadmin is an admin tool — runs on the server node (where PVC is bound)
+      # pgadmin is an admin tool — runs on the server node (where PVC is bound).
       # No untrusted toleration needed.
       containers:
         - name: pgadmin
-          image: dpage/pgadmin4:8
+          image: {{ .Values.pgadmin.image }}
           ports:
             - containerPort: 80
           env:
             - name: POSTGRES_HOST
               value: db
             # PGADMIN_OIDC_SECRET is sourced from the Pulumi-managed Secret
-            # `pgadmin-oidc` (created by personal-infrastructure/src/self-hosted/k8s.ts)
-            # rather than the app's own Secret. The canonical value lives in
-            # Pulumi config `pgadmin:oidcClientSecret` and must match the
-            # hashed `client_secret` in Authelia's configuration.yml. Sourcing
-            # it from there keeps the rotation surface in one place and
-            # avoids the 2026-04-19 bug where the app's Secret held the
-            # literal "PLACEHOLDER_WILL_BE_SET_AT_DEPLOY" after a kubectl
-            # apply because nothing ever substituted the placeholder.
+            # (personal-infrastructure) rather than the app's own Secret, so the
+            # rotation surface stays in one place.
             - name: PGADMIN_OIDC_SECRET
               valueFrom:
                 secretKeyRef:
-                  name: pgadmin-oidc
-                  key: client-secret
+                  name: {{ .Values.pgadmin.oidcSecretName }}
+                  key: {{ .Values.pgadmin.oidcSecretKey }}
           envFrom:
             - secretRef:
-                name: quicklinks-postgres
+                name: {{ .Values.secret.name }}
           command: ["/bin/sh", "/entrypoint_custom.sh"]
           volumeMounts:
             - name: data
@@ -219,14 +199,7 @@ spec:
               mountPath: /pgadmin4/oidc_cleanup.py
               subPath: oidc_cleanup.py
           resources:
-            requests:
-              cpu: "20m"
-              # Trued-up 2026-06-04: measured p90 working set ~193Mi —
-              # the old 64Mi request was fiction, and 193Mi against the
-              # old 256Mi limit was 75% of the way to an OOMKill.
-              memory: "256Mi"
-            limits:
-              memory: "512Mi"
+            {{- toYaml .Values.pgadmin.resources | nindent 12 }}
       volumes:
         - name: data
           persistentVolumeClaim:
@@ -240,6 +213,8 @@ apiVersion: v1
 kind: Service
 metadata:
   name: quicklinks-pgadmin
+  labels:
+    {{- include "quicklinks.labels" . | nindent 4 }}
 spec:
   type: ClusterIP
   selector:
@@ -248,29 +223,26 @@ spec:
     - port: 80
       targetPort: 80
 ---
-# Tailscale-only ingress — Caddy tailscale-proxy forwards here
-# cert-manager DNS-01 via Cloudflare works even for private/TS-only domains
+# Tailscale-only ingress — pgAdmin is a DB admin tool that must never be
+# reachable from the public internet. cert-manager DNS-01 via Cloudflare works
+# even for private/TS-only domains.
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: quicklinks-pgadmin
+  labels:
+    {{- include "quicklinks.labels" . | nindent 4 }}
   annotations:
-    cert-manager.io/cluster-issuer: letsencrypt-cloudflare
-    # Tailscale-only — pgAdmin is a DB admin tool that must never be
-    # reachable from the public internet. Deny-by-default in the cluster's
-    # HelmChartConfig would land it on websecure-ts anyway, but making the
-    # annotation explicit prevents accidental public exposure if the
-    # cluster default is ever flipped (or the Ingress is copied to a stack
-    # where the default differs).
-    traefik.ingress.kubernetes.io/router.entrypoints: "websecure-ts"
+    cert-manager.io/cluster-issuer: {{ .Values.ingress.clusterIssuer }}
+    traefik.ingress.kubernetes.io/router.entrypoints: {{ .Values.pgadmin.entryPoint | quote }}
 spec:
   ingressClassName: traefik
   tls:
     - hosts:
-        - pgadmin.gated.conrad-klaus.de
-      secretName: pgadmin-tls
+        - {{ .Values.pgadmin.host }}
+      secretName: {{ .Values.pgadmin.tlsSecret }}
   rules:
-    - host: pgadmin.gated.conrad-klaus.de
+    - host: {{ .Values.pgadmin.host }}
       http:
         paths:
           - path: /
@@ -280,3 +252,4 @@ spec:
                 name: quicklinks-pgadmin
                 port:
                   number: 80
+{{- end }}

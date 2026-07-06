@@ -1,0 +1,101 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: quick-links
+  labels:
+    app: quick-links
+    {{- include "quicklinks.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: quick-links
+  template:
+    metadata:
+      labels:
+        app: quick-links
+    spec:
+      tolerations:
+        {{- toYaml .Values.tolerations | nindent 8 }}
+      nodeSelector:
+        {{- toYaml .Values.nodeSelector | nindent 8 }}
+      containers:
+        - name: app
+          image: "{{ .Values.app.image.repository }}:{{ .Values.app.image.tag }}"
+          imagePullPolicy: {{ .Values.app.image.pullPolicy }}
+          ports:
+            - containerPort: 8080
+          env:
+            - name: POSTGRES_HOST
+              value: db
+          envFrom:
+            - secretRef:
+                name: {{ .Values.secret.name }}
+          resources:
+            {{- toYaml .Values.app.resources | nindent 12 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: quick-links
+  labels:
+    {{- include "quicklinks.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    app: quick-links
+  ports:
+    - port: 80
+      targetPort: 8080
+---
+# Per-client rate limit for the public goto/qr endpoints — defense-in-depth
+# against path enumeration (secret links are already unguessable on 128-bit
+# entropy). Mirrors hanna's /i/ rateLimit. See values.yaml for the sourceHeader
+# rationale (bucket by real client IP behind Cloudflare).
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: quicklinks-ratelimit
+  labels:
+    {{- include "quicklinks.labels" . | nindent 4 }}
+spec:
+  rateLimit:
+    average: {{ .Values.rateLimit.average }}
+    burst: {{ .Values.rateLimit.burst }}
+    period: 1s
+    sourceCriterion:
+      requestHeaderName: {{ .Values.rateLimit.sourceHeader }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: quick-links
+  labels:
+    {{- include "quicklinks.labels" . | nindent 4 }}
+  annotations:
+    cert-manager.io/cluster-issuer: {{ .Values.ingress.clusterIssuer }}
+    traefik.ingress.kubernetes.io/router.entrypoints: {{ .Values.ingress.entryPoints | join "," | quote }}
+    # Chained in order: cloudflare-only (drop non-Cloudflare origin traffic)
+    # THEN quicklinks-ratelimit (throttle per real client IP). The rate-limit
+    # Middleware lives in this release's namespace, hence the {{ .Release.Namespace }}- prefix.
+    traefik.ingress.kubernetes.io/router.middlewares: "{{ .Values.ingress.cloudflareOnlyMiddleware }},{{ .Release.Namespace }}-quicklinks-ratelimit@kubernetescrd"
+spec:
+  ingressClassName: traefik
+  tls:
+    {{- range .Values.hosts }}
+    - hosts: ["{{ .name }}"]
+      secretName: {{ .tlsSecret }}
+    {{- end }}
+  rules:
+    {{- range .Values.hosts }}
+    - host: {{ .name }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: quick-links
+                port:
+                  number: 80
+    {{- end }}

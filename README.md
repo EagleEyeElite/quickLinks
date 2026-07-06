@@ -33,6 +33,27 @@ Before you begin, ensure you have the following installed on your system:
   make production
   ```
 
+### Deploy to Kubernetes (Helm)
+
+The whole stack — app, Postgres, and pgAdmin — is one Helm chart under `chart/`
+(mirrors the `hanna` chart). Deploy/upgrade to the k3s cluster:
+
+```bash
+helm upgrade --install quick-links ./chart -n default
+```
+
+The image must be built for the cluster's arch and pushed first:
+
+```bash
+docker buildx build --platform linux/arm64 \
+  -t registry.k8s.gated.conrad-klaus.de/quick-links:latest --push .
+kubectl rollout restart deployment/quick-links   # pull the new :latest
+```
+
+Config lives in [`chart/values.yaml`](chart/values.yaml) (image tags, hosts,
+rate limit, resources). The Postgres/pgAdmin PVCs carry `helm.sh/resource-policy:
+keep`, so `helm uninstall` never deletes your data.
+
 ### Development
 - To start up the development environment with hot-reload (port `8080`):
   ```bash
@@ -82,7 +103,7 @@ short paths are guessable by design and not secret.
 - **Uniform lookups.** Every request hashes the path and does one exact-match
   lookup on a fixed-length key, so hit/miss timing is indistinguishable.
 - **Rate limiting.** A per-client Traefik `rateLimit` middleware
-  (`k8s/quick-links.yaml`) throttles probing, keyed on the real client IP via
+  (`chart/templates/app.yaml`) throttles probing, keyed on the real client IP via
   `Cf-Connecting-IP` (trustworthy behind the `cloudflare-only` allowlist).
 - **No secret in logs.** The path is never logged.
 

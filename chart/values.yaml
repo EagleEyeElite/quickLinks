@@ -1,0 +1,110 @@
+# quick-links — the goto.*/qr.* short-link + secure-redirect service, its
+# Postgres, and pgAdmin, packaged as one chart (mirrors the hanna chart).
+#
+# Deploy:
+#   helm upgrade --install quick-links ./chart -n default
+#
+# First time only — adopt the existing kubectl-applied resources into the
+# release instead of erroring on "already exists" (Helm v3.17+/v4):
+#   helm upgrade --install quick-links ./chart -n default --take-ownership
+
+# The target namespace. Off here because `default` already exists and holds the
+# live Postgres PVC; set true for a self-contained install on a fresh cluster.
+namespace:
+  create: false
+
+# Internet-facing workloads ride the hardware-isolated "untrusted" apps VM.
+nodeSelector:
+  kubernetes.io/hostname: k3s-apps-vm
+tolerations:
+  - key: workload-type
+    operator: Equal
+    value: untrusted
+    effect: NoSchedule
+  # replicas:1 pinned to the one untrusted node → this pod can only run there.
+  # The default 300s not-ready/unreachable tolerations then hurt: on a node
+  # reboot (nightly autoUpgrade / longer outage) k8s evicts the pod and makes a
+  # replacement that CAN'T schedule elsewhere, leaving the original as an
+  # uncollected "Error" pod corpse. Ride out node blips (6h), restart in place.
+  - key: node.kubernetes.io/not-ready
+    operator: Exists
+    effect: NoExecute
+    tolerationSeconds: 21600
+  - key: node.kubernetes.io/unreachable
+    operator: Exists
+    effect: NoExecute
+    tolerationSeconds: 21600
+
+app:
+  image:
+    repository: registry.k8s.gated.conrad-klaus.de/quick-links
+    tag: latest
+    pullPolicy: Always
+  resources:
+    requests: { cpu: 10m, memory: 16Mi }
+    limits: { memory: 64Mi }
+
+# Public hosts — both aliases route to the same app; each gets its own TLS cert.
+hosts:
+  - name: goto.conrad-klaus.de
+    tlsSecret: goto-tls
+  - name: qr.conrad-klaus.de
+    tlsSecret: qr-tls
+
+ingress:
+  clusterIssuer: letsencrypt-cloudflare
+  # Opt into the public entrypoints (Traefik is deny-by-default → Tailscale-only
+  # without this). The web entrypoint redirects :80 to HTTPS at the edge.
+  entryPoints: [web, websecure]
+  # cloudflare-only WAF allowlist (lives in kube-system) — chained BEFORE the
+  # rate limit so only Cloudflare-proxied traffic reaches the origin, and the
+  # WAN IP can't be hit directly to bypass the WAF.
+  cloudflareOnlyMiddleware: kube-system-cloudflare-only@kubernetescrd
+
+rateLimit:
+  average: 10 # sustained req/s per client
+  burst: 20 # bucket depth
+  # Bucket by the REAL client IP. All origin traffic arrives from Cloudflare edge
+  # IPs (enforced by cloudflare-only), so without this Traefik would rate-limit
+  # every user as one global bucket. Cf-Connecting-IP is trustworthy precisely
+  # because cloudflare-only guarantees the request came through Cloudflare.
+  sourceHeader: Cf-Connecting-IP
+
+postgres:
+  image: postgres:13
+  resources:
+    requests: { cpu: 20m, memory: 64Mi }
+    limits: { memory: 256Mi }
+  storage: 1Gi
+  storageClass: local-path
+
+# DB + pgAdmin credentials Secret. Keeping the password in git is accepted for
+# this repo. Set create:false and point envFrom at an external Secret of the
+# same name to manage it out-of-band instead.
+secret:
+  create: true
+  name: quicklinks-postgres
+  data:
+    POSTGRES_DB: quick_links
+    POSTGRES_USER: user
+    POSTGRES_PASSWORD: ybjwxzwuulkwoomxr
+    PGADMIN_DEFAULT_EMAIL: admin@example.com
+    PGADMIN_DEFAULT_PASSWORD: admin
+
+pgadmin:
+  enabled: true
+  image: dpage/pgadmin4:8
+  host: pgadmin.gated.conrad-klaus.de
+  tlsSecret: pgadmin-tls
+  # Tailscale-only — pgAdmin must never be reachable from the public internet.
+  entryPoint: websecure-ts
+  # OIDC client secret is managed externally by personal-infrastructure's Pulumi
+  # stack (Secret `pgadmin-oidc`, key `client-secret`); the chart references but
+  # does NOT create it, so the rotation surface stays in one place.
+  oidcSecretName: pgadmin-oidc
+  oidcSecretKey: client-secret
+  storage: 1Gi
+  storageClass: local-path
+  resources:
+    requests: { cpu: 20m, memory: 256Mi }
+    limits: { memory: 512Mi }

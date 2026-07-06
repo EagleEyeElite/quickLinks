@@ -1,0 +1,14 @@
+quick-links deployed to namespace: {{ .Release.Namespace }}
+
+Public short-link hosts:
+{{- range .Values.hosts }}
+  - https://{{ .name }}/<path>
+{{- end }}
+
+Rate limit: {{ .Values.rateLimit.average }} req/s (burst {{ .Values.rateLimit.burst }}) per client IP.
+{{- if .Values.pgadmin.enabled }}
+pgAdmin (Tailscale-only): https://{{ .Values.pgadmin.host }}
+{{- end }}
+
+Mint a secure (128-bit, unguessable) link + its INSERT SQL:
+  python3 generateLinks.py

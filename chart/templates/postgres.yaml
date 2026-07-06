@@ -1,16 +1,16 @@
 ---
-# init_db.sql as a ConfigMap so postgres can use it
+# init_db.sql as a ConfigMap so postgres can seed an EMPTY database on first
+# init (docker-entrypoint-initdb.d). Keep in sync with db/init_db.sql. Rows are
+# keyed by sha256(path) so a DB/backup leak can't recover working secret links;
+# the app hashes the incoming path before looking it up. redirect_url is TEXT so
+# long destinations aren't truncated; label is an optional non-secret admin note.
 apiVersion: v1
 kind: ConfigMap
 metadata:
   name: db-init
+  labels:
+    {{- include "quicklinks.labels" . | nindent 4 }}
 data:
-  # Keep in sync with db/init_db.sql. Rows are keyed by sha256(path) so a DB or
-  # backup leak cannot recover working secret links; the app hashes the incoming
-  # path before looking it up. redirect_url is TEXT so long destinations aren't
-  # truncated; label is an optional non-secret note for admins.
-  # NOTE: this ConfigMap only seeds an EMPTY database (postgres runs
-  # docker-entrypoint-initdb.d scripts on first init).
   init_db.sql: |
     CREATE TABLE redirects (
         path_hash    CHAR(64) PRIMARY KEY,
@@ -23,18 +23,23 @@ data:
       ('4ea140588150773ce3aace786aeef7f4049ce100fa649c94fbbddb960f1da942', 'https://example.com', 'home'),
       ('9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08', 'https://test.com',    'test');
 ---
-# Persistent storage for postgres data
+# Persistent storage for postgres data. resource-policy:keep so `helm uninstall`
+# (or a template removal) never deletes the volume holding every link.
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: db-data
+  labels:
+    {{- include "quicklinks.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/resource-policy: keep
 spec:
   accessModes:
     - ReadWriteOnce
   resources:
     requests:
-      storage: 1Gi
-  storageClassName: local-path
+      storage: {{ .Values.postgres.storage }}
+  storageClassName: {{ .Values.postgres.storageClass }}
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -42,10 +47,11 @@ metadata:
   name: db
   labels:
     app: db
+    {{- include "quicklinks.labels" . | nindent 4 }}
 spec:
   replicas: 1
   strategy:
-    type: Recreate  # PVC is RWO; can't have two pods running at once
+    type: Recreate # PVC is RWO; can't have two pods running at once
   selector:
     matchLabels:
       app: db
@@ -58,31 +64,24 @@ spec:
       # Postgres data volume sits behind the same trust boundary as the pods
       # that read it. The k3s LXC is reserved for privileged workloads.
       tolerations:
-        - key: "workload-type"
-          operator: "Equal"
-          value: "untrusted"
-          effect: "NoSchedule"
+        {{- toYaml .Values.tolerations | nindent 8 }}
       nodeSelector:
-        kubernetes.io/hostname: k3s-apps-vm
+        {{- toYaml .Values.nodeSelector | nindent 8 }}
       containers:
         - name: postgres
-          image: postgres:13
+          image: {{ .Values.postgres.image }}
           ports:
             - containerPort: 5432
           envFrom:
             - secretRef:
-                name: quicklinks-postgres
+                name: {{ .Values.secret.name }}
           volumeMounts:
             - name: data
               mountPath: /var/lib/postgresql/data
             - name: init
               mountPath: /docker-entrypoint-initdb.d
           resources:
-            requests:
-              cpu: "20m"
-              memory: "64Mi"
-            limits:
-              memory: "256Mi"
+            {{- toYaml .Values.postgres.resources | nindent 12 }}
       volumes:
         - name: data
           persistentVolumeClaim:
@@ -91,13 +90,14 @@ spec:
           configMap:
             name: db-init
 ---
-# ClusterIP service — never exposed via Ingress (private to cluster)
 apiVersion: v1
 kind: Service
 metadata:
   name: db
+  labels:
+    {{- include "quicklinks.labels" . | nindent 4 }}
 spec:
-  type: ClusterIP
+  type: ClusterIP # never exposed via Ingress (private to cluster)
   selector:
     app: db
   ports:
