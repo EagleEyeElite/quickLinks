@@ -101,7 +101,11 @@ spec:
                 name: {{ .Values.secret.name }}
           volumeMounts:
             - name: data
-              mountPath: /var/lib/postgresql/data
+              # Must equal the image's VOLUME, not its PGDATA — they diverged in
+              # postgres:18 (VOLUME /var/lib/postgresql, PGDATA
+              # /var/lib/postgresql/18/docker). Mounting PGDATA's old path on 18
+              # loses all data silently. See the note in values.yaml.
+              mountPath: {{ .Values.postgres.dataMountPath }}
             - name: init
               mountPath: /docker-entrypoint-initdb.d
           resources:

@@ -71,7 +71,24 @@ rateLimit:
   sourceHeader: Cf-Connecting-IP
 
 postgres:
-  image: postgres:13
+  # 13 -> 18 on 2026-08-26. Postgres 13 went EOL in November 2025, so it stopped
+  # receiving security patches entirely; Trivy had this image at 19 critical /
+  # 133 high, second-worst in the cluster.
+  #
+  # READ THIS BEFORE CHANGING THE TAG AGAIN — the 18 image moved the data dir:
+  #
+  #     postgres:13 / :17   PGDATA=/var/lib/postgresql/data   VOLUME .../data
+  #     postgres:18         PGDATA=/var/lib/postgresql/18/docker
+  #                         VOLUME=/var/lib/postgresql
+  #
+  # So `dataMountPath` below MUST track the image's VOLUME, not PGDATA. If you
+  # bump to 18+ while still mounting the PVC at /var/lib/postgresql/data, the
+  # container starts happily, initdb's a brand-new empty cluster inside the
+  # container's ephemeral layer, and every link silently disappears on the next
+  # pod restart. Nothing errors. Going back to 17 or lower means reverting
+  # dataMountPath to /var/lib/postgresql/data in the same change.
+  image: postgres:18
+  dataMountPath: /var/lib/postgresql
   resources:
     requests: { cpu: 20m, memory: 64Mi }
     limits: { memory: 256Mi }
