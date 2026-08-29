@@ -19,10 +19,24 @@ spec:
         {{- toYaml .Values.tolerations | nindent 8 }}
       nodeSelector:
         {{- toYaml .Values.nodeSelector | nindent 8 }}
+      # The binary is pure-Go in a scratch image with no USER directive, so
+      # without this it runs as uid 0. It needs no privileges (port 8080,
+      # stdout logging, DB over the network) — run it as nobody so the
+      # namespace can enforce the `restricted` Pod Security Standard.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: app
           image: "{{ .Values.app.image.repository }}:{{ .Values.app.image.tag }}"
           imagePullPolicy: {{ .Values.app.image.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
           ports:
             - containerPort: 8080
           env:

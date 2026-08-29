@@ -91,9 +91,24 @@ spec:
         {{- toYaml .Values.tolerations | nindent 8 }}
       nodeSelector:
         {{- toYaml .Values.nodeSelector | nindent 8 }}
+      # Run as the image's own postgres user (999) instead of letting the
+      # entrypoint start as root and drop privileges — required by the
+      # `restricted` Pod Security Standard on the namespace. The data files
+      # are already owned by 999 (the entrypoint chowned them back when it
+      # still started as root), so this is a no-op for existing volumes.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        runAsGroup: 999
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: postgres
           image: {{ .Values.postgres.image }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
           ports:
             - containerPort: 5432
           envFrom:
