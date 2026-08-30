@@ -87,11 +87,12 @@
     {
       "type": "table",
       "title": "Recent activity",
+      "description": "Per resolve attempt: the requested path, the internal note of where that link is used (redirects.description — empty for misses and undescribed links), and where it forwarded to at click time.",
       "datasource": { "type": "postgres", "uid": "quicklinks-pg" },
       "gridPos": { "h": 10, "w": 24, "x": 0, "y": 39 },
       "fieldConfig": { "defaults": {}, "overrides": [] },
       "options": { "showHeader": true },
-      "targets": [{ "refId": "A", "format": "table", "rawSql": "SELECT ts AS \"time\", outcome, path, label, redirect_url AS \"forwarded to\", client_ip, country, user_agent FROM click_events WHERE $__timeFilter(ts) ORDER BY ts DESC LIMIT 100", "datasource": { "type": "postgres", "uid": "quicklinks-pg" } }]
+      "targets": [{ "refId": "A", "format": "table", "rawSql": "SELECT ce.ts AS \"time\", ce.outcome, ce.path, r.description AS \"used on\", ce.redirect_url AS \"forwarded to\", ce.client_ip, ce.country, ce.user_agent FROM click_events ce LEFT JOIN redirects r ON r.path_hash = encode(sha256(convert_to(ce.path, 'UTF8')), 'hex') WHERE $__timeFilter(ce.ts) ORDER BY ce.ts DESC LIMIT 100", "datasource": { "type": "postgres", "uid": "quicklinks-pg" } }]
     }
   ]
 }
