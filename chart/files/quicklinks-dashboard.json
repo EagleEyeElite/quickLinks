@@ -58,17 +58,28 @@
     {
       "type": "table",
       "title": "Top links (hits)",
+      "description": "Per link in the time range: how often it was hit, the internal description of where the link is physically used (redirects.description), and where it forwarded to — the click-time destination logged in click_events (falling back to the link's current destination for clicks older than 2026-08-30).",
       "datasource": { "type": "postgres", "uid": "quicklinks-pg" },
-      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 12 },
+      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 12 },
       "fieldConfig": { "defaults": {}, "overrides": [] },
       "options": { "showHeader": true },
-      "targets": [{ "refId": "A", "format": "table", "rawSql": "SELECT coalesce(label, path) AS link, count(*) AS clicks FROM click_events WHERE outcome = 'hit' AND $__timeFilter(ts) GROUP BY 1 ORDER BY clicks DESC LIMIT 20", "datasource": { "type": "postgres", "uid": "quicklinks-pg" } }]
+      "targets": [{ "refId": "A", "format": "table", "rawSql": "SELECT coalesce(ce.label, ce.path) AS link, count(*) AS hits, r.description AS \"used on\", coalesce((array_remove(array_agg(ce.redirect_url ORDER BY ce.ts DESC), NULL))[1], min(r.redirect_url)) AS \"forwarded to\" FROM click_events ce LEFT JOIN redirects r ON r.path_hash = encode(sha256(convert_to(ce.path, 'UTF8')), 'hex') WHERE ce.outcome = 'hit' AND $__timeFilter(ce.ts) GROUP BY 1, 3 ORDER BY hits DESC LIMIT 20", "datasource": { "type": "postgres", "uid": "quicklinks-pg" } }]
+    },
+    {
+      "type": "table",
+      "title": "All links (registry)",
+      "description": "Every registered link, ignoring the dashboard time range: description (where it's used), current destination, and all-time hits. Links that were never clicked show their label as the link.",
+      "datasource": { "type": "postgres", "uid": "quicklinks-pg" },
+      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 21 },
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "options": { "showHeader": true },
+      "targets": [{ "refId": "A", "format": "table", "rawSql": "WITH hits AS (SELECT path, count(*) AS n, max(ts) AS last_hit FROM click_events WHERE outcome = 'hit' GROUP BY path), hashed AS (SELECT path, n, last_hit, encode(sha256(convert_to(path, 'UTF8')), 'hex') AS ph FROM hits) SELECT coalesce(hashed.path, r.label) AS link, r.description AS \"used on\", r.redirect_url AS \"currently forwards to\", coalesce(hashed.n, 0) AS \"hits (all time)\", hashed.last_hit FROM redirects r LEFT JOIN hashed ON hashed.ph = r.path_hash ORDER BY coalesce(hashed.n, 0) DESC", "datasource": { "type": "postgres", "uid": "quicklinks-pg" } }]
     },
     {
       "type": "table",
       "title": "Possible enumeration (misses by IP)",
       "datasource": { "type": "postgres", "uid": "quicklinks-pg" },
-      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 12 },
+      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 30 },
       "fieldConfig": { "defaults": {}, "overrides": [] },
       "options": { "showHeader": true },
       "targets": [{ "refId": "A", "format": "table", "rawSql": "SELECT client_ip, country, count(*) AS misses FROM click_events WHERE outcome = 'miss' AND $__timeFilter(ts) GROUP BY 1, 2 ORDER BY misses DESC LIMIT 20", "datasource": { "type": "postgres", "uid": "quicklinks-pg" } }]
@@ -77,10 +88,10 @@
       "type": "table",
       "title": "Recent activity",
       "datasource": { "type": "postgres", "uid": "quicklinks-pg" },
-      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 21 },
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 39 },
       "fieldConfig": { "defaults": {}, "overrides": [] },
       "options": { "showHeader": true },
-      "targets": [{ "refId": "A", "format": "table", "rawSql": "SELECT ts AS \"time\", outcome, path, label, client_ip, country, user_agent FROM click_events WHERE $__timeFilter(ts) ORDER BY ts DESC LIMIT 100", "datasource": { "type": "postgres", "uid": "quicklinks-pg" } }]
+      "targets": [{ "refId": "A", "format": "table", "rawSql": "SELECT ts AS \"time\", outcome, path, label, redirect_url AS \"forwarded to\", client_ip, country, user_agent FROM click_events WHERE $__timeFilter(ts) ORDER BY ts DESC LIMIT 100", "datasource": { "type": "postgres", "uid": "quicklinks-pg" } }]
     }
   ]
 }

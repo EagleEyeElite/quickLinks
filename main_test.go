@@ -23,12 +23,13 @@ const (
 func seed(t *testing.T) {
 	t.Helper()
 	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS redirects (
-		path_hash CHAR(64) PRIMARY KEY, redirect_url TEXT NOT NULL, label VARCHAR(255))`); err != nil {
+		path_hash CHAR(64) PRIMARY KEY, redirect_url TEXT, label VARCHAR(255),
+		description TEXT)`); err != nil {
 		t.Fatalf("create redirects: %v", err)
 	}
 	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS click_events (
 		id BIGSERIAL PRIMARY KEY, ts TIMESTAMPTZ NOT NULL, outcome VARCHAR(16) NOT NULL,
-		path TEXT, label VARCHAR(255), client_ip TEXT, country VARCHAR(8),
+		path TEXT, label VARCHAR(255), redirect_url TEXT, client_ip TEXT, country VARCHAR(8),
 		user_agent TEXT, referrer TEXT)`); err != nil {
 		t.Fatalf("create click_events: %v", err)
 	}
@@ -48,6 +49,35 @@ func TestExistingPathRedirects(t *testing.T) {
 	}
 	if loc := rr.Header().Get("Location"); loc != destURL {
 		t.Fatalf("want Location %q, got %q", destURL, loc)
+	}
+}
+
+// A parked link (registered, but redirect_url NULL) 404s like a miss to the
+// visitor, but logs as a hit (with no redirect_url) carrying the label.
+func TestParkedPathIs404AndLogged(t *testing.T) {
+	seed(t)
+	const parkedPath = "parked-test-path"
+	if _, err := db.Exec(`INSERT INTO redirects (path_hash, redirect_url, label) VALUES ($1, NULL, 'parked-lbl')
+		ON CONFLICT (path_hash) DO UPDATE SET redirect_url = NULL, label = 'parked-lbl'`,
+		hashPath(parkedPath)); err != nil {
+		t.Fatalf("seed parked row: %v", err)
+	}
+	var buf bytes.Buffer
+	log.SetOutput(&buf)
+	defer log.SetOutput(nil)
+
+	rr := httptest.NewRecorder()
+	redirectHandler(rr, httptest.NewRequest(http.MethodGet, "/"+parkedPath, nil))
+	if rr.Code != http.StatusNotFound {
+		t.Fatalf("want 404 for parked link, got %d", rr.Code)
+	}
+	for _, want := range []string{`"outcome":"hit"`, "parked-lbl"} {
+		if !bytes.Contains(buf.Bytes(), []byte(want)) {
+			t.Fatalf("log line missing %q; got: %s", want, buf.String())
+		}
+	}
+	if bytes.Contains(buf.Bytes(), []byte(`"redirect_url"`)) {
+		t.Fatalf("parked hit must not log a redirect_url; got: %s", buf.String())
 	}
 }
 
@@ -98,21 +128,21 @@ func TestClickLoggedToStdout(t *testing.T) {
 func TestInsertEventPersists(t *testing.T) {
 	seed(t)
 	ev := &clickEvent{
-		Time: time.Now().UTC(), Outcome: "hit", Path: secretPath, Label: sampleLbl,
+		Time: time.Now().UTC(), Outcome: "hit", Path: secretPath, Label: sampleLbl, RedirectURL: destURL,
 		ClientIP: "203.0.113.7", Country: "DE", UserAgent: "test-agent", Referrer: "https://example.org/",
 	}
 	if err := insertEvent(ev); err != nil {
 		t.Fatalf("insertEvent: %v", err)
 	}
-	var outcome, path, ip, country string
+	var outcome, path, redirectURL, ip, country string
 	err := db.QueryRow(
-		`SELECT outcome, path, client_ip, country FROM click_events
+		`SELECT outcome, path, redirect_url, client_ip, country FROM click_events
 		 WHERE path=$1 AND user_agent='test-agent' ORDER BY id DESC LIMIT 1`, secretPath).
-		Scan(&outcome, &path, &ip, &country)
+		Scan(&outcome, &path, &redirectURL, &ip, &country)
 	if err != nil {
 		t.Fatalf("read back: %v", err)
 	}
-	if outcome != "hit" || path != secretPath || ip != "203.0.113.7" || country != "DE" {
-		t.Fatalf("row mismatch: outcome=%s path=%s ip=%s country=%s", outcome, path, ip, country)
+	if outcome != "hit" || path != secretPath || redirectURL != destURL || ip != "203.0.113.7" || country != "DE" {
+		t.Fatalf("row mismatch: outcome=%s path=%s redirect_url=%s ip=%s country=%s", outcome, path, redirectURL, ip, country)
 	}
 }

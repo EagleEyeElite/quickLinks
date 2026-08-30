@@ -12,10 +12,15 @@ metadata:
     {{- include "quicklinks.labels" . | nindent 4 }}
 data:
   init_db.sql: |
+    -- description: internal-only note recording WHERE the link is physically
+    -- deployed (e.g. 'BusinessCard v1'). Never served to visitors.
+    -- redirect_url NULL = "parked" link: registered but no destination yet;
+    -- the app 404s but logs the scan as a hit with empty redirect_url.
     CREATE TABLE redirects (
         path_hash    CHAR(64) PRIMARY KEY,
-        redirect_url TEXT NOT NULL,
-        label        VARCHAR(255)
+        redirect_url TEXT,
+        label        VARCHAR(255),
+        description  TEXT
     );
 
     -- sha256('home') and sha256('test') — sample vanity links (not secret).
@@ -26,25 +31,29 @@ data:
     -- Access log: one row per resolve attempt (see db/init_db.sql). Never
     -- auto-pruned; the app also emits each event as JSON to stdout.
     CREATE TABLE click_events (
-        id         BIGSERIAL PRIMARY KEY,
-        ts         TIMESTAMPTZ NOT NULL,
-        outcome    VARCHAR(16) NOT NULL,
-        path       TEXT,
-        label      VARCHAR(255),
-        client_ip  TEXT,
-        country    VARCHAR(8),
-        user_agent TEXT,
-        referrer   TEXT
+        id           BIGSERIAL PRIMARY KEY,
+        ts           TIMESTAMPTZ NOT NULL,
+        outcome      VARCHAR(16) NOT NULL,
+        path         TEXT,
+        label        VARCHAR(255),
+        redirect_url TEXT, -- destination at click time, on a hit
+        client_ip    TEXT,
+        country      VARCHAR(8),
+        user_agent   TEXT,
+        referrer     TEXT
     );
     CREATE INDEX click_events_ts_idx ON click_events (ts);
     CREATE INDEX click_events_path_idx ON click_events (path);
 {{- if .Values.grafana.enabled }}
 
-    -- Read-only role for the Grafana dashboard (SELECT on click_events only).
+    -- Read-only role for the Grafana dashboard (SELECT on click_events +
+    -- redirects; the stored hashes are non-reversible, so no working secret
+    -- links leak through this role).
     CREATE ROLE {{ .Values.grafana.roUser }} LOGIN PASSWORD '{{ .Values.grafana.roPassword }}';
     GRANT CONNECT ON DATABASE quick_links TO {{ .Values.grafana.roUser }};
     GRANT USAGE ON SCHEMA public TO {{ .Values.grafana.roUser }};
     GRANT SELECT ON click_events TO {{ .Values.grafana.roUser }};
+    GRANT SELECT ON redirects TO {{ .Values.grafana.roUser }};
 {{- end }}
 ---
 # Persistent storage for postgres data. resource-policy:keep so `helm uninstall`

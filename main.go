@@ -76,14 +76,15 @@ func hashPath(path string) string {
 // recorded verbatim — this is an intentional access log, so a successful secret
 // path does appear here.
 type clickEvent struct {
-	Time      time.Time `json:"time"`
-	Outcome   string    `json:"outcome"` // hit | miss | rejected | error
-	Path      string    `json:"path"`
-	Label     string    `json:"label,omitempty"`
-	ClientIP  string    `json:"client_ip,omitempty"`
-	Country   string    `json:"country,omitempty"`
-	UserAgent string    `json:"user_agent,omitempty"`
-	Referrer  string    `json:"referrer,omitempty"`
+	Time        time.Time `json:"time"`
+	Outcome     string    `json:"outcome"` // hit | miss | rejected | error (a hit with empty redirect_url = parked link)
+	Path        string    `json:"path"`
+	Label       string    `json:"label,omitempty"`
+	RedirectURL string    `json:"redirect_url,omitempty"` // destination at click time, on a hit
+	ClientIP    string    `json:"client_ip,omitempty"`
+	Country     string    `json:"country,omitempty"`
+	UserAgent   string    `json:"user_agent,omitempty"`
+	Referrer    string    `json:"referrer,omitempty"`
 }
 
 // newEvent captures the non-body request context up front (before we respond),
@@ -118,10 +119,10 @@ func record(ev *clickEvent) {
 // insertEvent persists one event. Empty strings are stored as NULL.
 func insertEvent(ev *clickEvent) error {
 	_, err := db.Exec(
-		`INSERT INTO click_events (ts, outcome, path, label, client_ip, country, user_agent, referrer)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+		`INSERT INTO click_events (ts, outcome, path, label, redirect_url, client_ip, country, user_agent, referrer)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
 		ev.Time, ev.Outcome, ev.Path,
-		nullify(ev.Label), nullify(ev.ClientIP), nullify(ev.Country),
+		nullify(ev.Label), nullify(ev.RedirectURL), nullify(ev.ClientIP), nullify(ev.Country),
 		nullify(ev.UserAgent), nullify(ev.Referrer),
 	)
 	return err
@@ -154,8 +155,7 @@ func redirectHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var redirectURL string
-	var label sql.NullString
+	var redirectURL, label sql.NullString
 	err := db.QueryRow("SELECT redirect_url, label FROM redirects WHERE path_hash = $1", hashPath(path)).Scan(&redirectURL, &label)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -170,9 +170,24 @@ func redirectHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// A registered link with no destination yet (NULL/empty redirect_url) is
+	// "parked": e.g. a QR code already in print whose target isn't live. To the
+	// visitor it is indistinguishable from a miss (404), but it counts as a
+	// regular hit with an empty redirect_url, so pre-activation scans show up
+	// in the dashboard's hit counts alongside everything else.
+	if redirectURL.String == "" {
+		ev.Outcome = "hit"
+		ev.Label = label.String
+		serve404(w)
+		return
+	}
+
 	ev.Outcome = "hit"
 	ev.Label = label.String
-	http.Redirect(w, r, redirectURL, http.StatusSeeOther)
+	// Log the destination as it was at click time: if the link is later
+	// repointed, the history still shows where each click actually went.
+	ev.RedirectURL = redirectURL.String
+	http.Redirect(w, r, redirectURL.String, http.StatusSeeOther)
 }
 
 func serve404(w http.ResponseWriter) {

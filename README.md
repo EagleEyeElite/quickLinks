@@ -91,7 +91,10 @@ python3 generateLinks.py
 ```
 
 Each entry prints the shareable URL plus a ready-to-paste `INSERT`. Add your real
-destination in the script (or import `sql_for(path, url, label)`). For short
+destination in the script (or import `sql_for(path, url, label, description)` —
+`description` is an internal-only note recording where the link is physically
+deployed, e.g. 'BusinessCard v1'; it is never served to visitors and surfaces
+only in the gated Grafana dashboard). For short
 vanity links, `sql_for('home', 'https://…', 'home')` works too — just remember
 short paths are guessable by design and not secret.
 

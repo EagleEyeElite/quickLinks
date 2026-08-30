@@ -7,10 +7,19 @@
 -- redirect_url is TEXT so long destination URLs are not truncated.
 -- label is an optional, non-secret human note so admins can tell rows apart in
 -- pgAdmin without storing the secret path.
+-- description is an internal-only note recording WHERE the link is deployed in
+-- the physical world (e.g. 'BusinessCard v1', 'sticker on the DMX analyzer').
+-- The app never reads it and it is never served to visitors; it surfaces only
+-- in the (gated) Grafana dashboard and pgAdmin.
+-- redirect_url may be NULL: a "parked" link — registered (e.g. a QR code
+-- already in print) but with no live destination yet. The app answers 404 for
+-- it but logs the scan as a regular hit with an empty redirect_url, so
+-- pre-activation scans count in the dashboard.
 CREATE TABLE redirects (
     path_hash    CHAR(64) PRIMARY KEY,   -- lowercase hex sha256(path)
-    redirect_url TEXT NOT NULL,
-    label        VARCHAR(255)
+    redirect_url TEXT,
+    label        VARCHAR(255),
+    description  TEXT
 );
 
 -- Sample vanity links. These short paths are guessable by design (they are not
@@ -33,23 +42,27 @@ INSERT INTO redirects (path_hash, redirect_url, label) VALUES
 -- requested path is stored verbatim — this is an intentional access log. Rows
 -- are never auto-pruned; retention is a manual decision.
 CREATE TABLE click_events (
-    id         BIGSERIAL PRIMARY KEY,
-    ts         TIMESTAMPTZ NOT NULL,
-    outcome    VARCHAR(16) NOT NULL,   -- hit | miss | rejected | error
-    path       TEXT,                   -- what the visitor requested
-    label      VARCHAR(255),           -- resolved link's label, on a hit
-    client_ip  TEXT,                   -- Cf-Connecting-IP (real client)
-    country    VARCHAR(8),             -- CF-IPCountry
-    user_agent TEXT,
-    referrer   TEXT
+    id           BIGSERIAL PRIMARY KEY,
+    ts           TIMESTAMPTZ NOT NULL,
+    outcome      VARCHAR(16) NOT NULL,   -- hit | miss | rejected | error (hit with NULL redirect_url = parked link)
+    path         TEXT,                   -- what the visitor requested
+    label        VARCHAR(255),           -- resolved link's label, on a hit
+    redirect_url TEXT,                   -- where it forwarded to AT CLICK TIME, on a hit
+    client_ip    TEXT,                   -- Cf-Connecting-IP (real client)
+    country      VARCHAR(8),             -- CF-IPCountry
+    user_agent   TEXT,
+    referrer     TEXT
 );
 CREATE INDEX click_events_ts_idx ON click_events (ts);
 CREATE INDEX click_events_path_idx ON click_events (path);
 
--- Read-only role for the Grafana "Apps" dashboard: it may only SELECT from
--- click_events, nothing else. Keep this password in sync with chart values
+-- Read-only role for the Grafana "Apps" dashboard: SELECT on click_events and
+-- redirects (the dashboard joins redirects for description/current URL — the
+-- stored hashes are non-reversible, so exposing them to this role leaks no
+-- working links), nothing else. Keep this password in sync with chart values
 -- (grafana.roPassword) and the Grafana datasource Secret.
 CREATE ROLE grafana_ro LOGIN PASSWORD 'Rk8mQ2pLf9TzYwB3nXcV';
 GRANT CONNECT ON DATABASE quick_links TO grafana_ro;
 GRANT USAGE ON SCHEMA public TO grafana_ro;
 GRANT SELECT ON click_events TO grafana_ro;
+GRANT SELECT ON redirects TO grafana_ro;

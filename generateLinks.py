@@ -41,17 +41,24 @@ def generate_secure_path(nbytes=16):
     return secrets.token_urlsafe(nbytes)
 
 
-def sql_for(path, redirect_url, label=None):
+def sql_for(path, redirect_url, label=None, description=None):
     """Return the INSERT statement that registers `path` -> `redirect_url`.
 
     Only the sha256 hash of the path is stored; the plaintext path never touches
     the database. `label` is an optional non-secret note (defaults to NULL).
+    `description` records where the link is physically deployed (e.g.
+    'BusinessCard v1') — internal-only, shown in the gated Grafana dashboard.
+    `redirect_url` may be None to register a "parked" link with no live
+    destination yet (the app 404s but counts the scan as a hit).
     """
     path_hash = hashlib.sha256(path.encode()).hexdigest()
-    label_sql = "NULL" if label is None else f"'{label}'"
+
+    def quote(s):
+        return "NULL" if s is None else "'" + s.replace("'", "''") + "'"
+
     return (
-        "INSERT INTO redirects (path_hash, redirect_url, label) VALUES "
-        f"('{path_hash}', '{redirect_url}', {label_sql});"
+        "INSERT INTO redirects (path_hash, redirect_url, label, description) VALUES "
+        f"('{path_hash}', {quote(redirect_url)}, {quote(label)}, {quote(description)});"
     )
 
 
