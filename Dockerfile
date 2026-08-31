@@ -1,13 +1,16 @@
 # Start from the official Golang base image for the build stage
-# 2026-04-12: Updated from 1.22 to 1.24 to fix CVE-2025-68121 (crypto/tls
-# incorrect certificate validation during TLS session resumption).
+# 2026-04-12: Updated 1.22 -> 1.24 to fix CVE-2025-68121 (crypto/tls).
+# 2026-08-31: Updated 1.24 -> 1.26 to clear 6 HIGH stdlib CVEs (e.g.
+# CVE-2026-33811, CVE-2026-32281) — the scratch image has no OS packages, so
+# every CVE here comes from the Go stdlib compiled in; bumping the toolchain
+# recompiles against the patched stdlib.
 #
 # --platform=$BUILDPLATFORM pins the builder to the machine doing the build
 # (e.g. amd64 CI/laptop) and we cross-compile to $TARGETARCH below. Because the
 # binary is pure-Go (CGO_ENABLED=0), Go cross-compiles natively — no QEMU
 # emulation needed to target the arm64 Raspberry Pi. TARGETOS/TARGETARCH are
 # provided automatically by BuildKit from --platform.
-FROM --platform=$BUILDPLATFORM golang:1.24-alpine AS builder
+FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS builder
 ARG TARGETOS
 ARG TARGETARCH
 
