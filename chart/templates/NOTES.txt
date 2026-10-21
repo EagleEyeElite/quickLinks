@@ -2,7 +2,7 @@ quick-links deployed to namespace: {{ .Release.Namespace }}
 
 Public short-link hosts:
 {{- range .Values.hosts }}
-  - https://{{ .name }}/<path>
+  - https://{{ . }}/<path>
 {{- end }}
 
 Rate limit: {{ .Values.rateLimit.average }} req/s (burst {{ .Values.rateLimit.burst }}) per client IP.

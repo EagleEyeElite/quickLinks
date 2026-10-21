@@ -38,7 +38,8 @@ spec:
             capabilities:
               drop: ["ALL"]
           ports:
-            - containerPort: 8080
+            - name: http
+              containerPort: 8080
           env:
             - name: POSTGRES_HOST
               value: db
@@ -59,8 +60,9 @@ spec:
   selector:
     app: quick-links
   ports:
-    - port: 80
-      targetPort: 8080
+    - name: http
+      port: 80
+      targetPort: http
 ---
 # Per-client rate limit for the public goto/qr endpoints — defense-in-depth
 # against path enumeration (secret links are already unguessable on 128-bit
@@ -80,36 +82,33 @@ spec:
     sourceCriterion:
       requestHeaderName: {{ .Values.rateLimit.sourceHeader }}
 ---
-apiVersion: networking.k8s.io/v1
-kind: Ingress
+# Public through Cloudflare. The cluster refuses this route without the
+# cloudflare-only filter; the rate limit runs after it, so it only ever sees
+# Cloudflare-proxied requests (and their Cf-Connecting-IP).
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
 metadata:
   name: quick-links
   labels:
     {{- include "quicklinks.labels" . | nindent 4 }}
-  annotations:
-    cert-manager.io/cluster-issuer: {{ .Values.ingress.clusterIssuer }}
-    traefik.ingress.kubernetes.io/router.entrypoints: {{ .Values.ingress.entryPoints | join "," | quote }}
-    # Chained in order: cloudflare-only (drop non-Cloudflare origin traffic)
-    # THEN quicklinks-ratelimit (throttle per real client IP). The rate-limit
-    # Middleware lives in this release's namespace, hence the {{ .Release.Namespace }}- prefix.
-    traefik.ingress.kubernetes.io/router.middlewares: "{{ .Values.ingress.cloudflareOnlyMiddleware }},{{ .Release.Namespace }}-quicklinks-ratelimit@kubernetescrd"
 spec:
-  ingressClassName: traefik
-  tls:
-    {{- range .Values.hosts }}
-    - hosts: ["{{ .name }}"]
-      secretName: {{ .tlsSecret }}
-    {{- end }}
+  parentRefs:
+    - name: public
+      namespace: kube-system
+  hostnames:
+    {{- toYaml .Values.hosts | nindent 4 }}
   rules:
-    {{- range .Values.hosts }}
-    - host: {{ .name }}
-      http:
-        paths:
-          - path: /
-            pathType: Prefix
-            backend:
-              service:
-                name: quick-links
-                port:
-                  number: 80
-    {{- end }}
+    - filters:
+        - type: ExtensionRef
+          extensionRef:
+            group: traefik.io
+            kind: Middleware
+            name: cloudflare-only
+        - type: ExtensionRef
+          extensionRef:
+            group: traefik.io
+            kind: Middleware
+            name: quicklinks-ratelimit
+      backendRefs:
+        - name: quick-links
+          port: 80

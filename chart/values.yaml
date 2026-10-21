@@ -1,15 +1,16 @@
 # quick-links — the goto.*/qr.* short-link + secure-redirect service, its
 # Postgres, and pgAdmin, packaged as one chart (mirrors the hanna chart).
 #
-# Deploy:
-#   helm upgrade --install quick-links ./chart -n default
+# Deployed into its own namespace, `quicklinks`, which personal-infrastructure
+# owns (src/self-hosted/app-namespaces.ts): default-deny network policies (plus
+# quick-links -> db and Grafana -> db, boxes.ts), the restricted Pod Security
+# Standard, the access middlewares, and the way in from Traefik. This chart
+# owns what runs inside it.
 #
-# First time only — adopt the existing kubectl-applied resources into the
-# release instead of erroring on "already exists" (Helm v3.17+/v4):
-#   helm upgrade --install quick-links ./chart -n default --take-ownership
+#   helm upgrade --install quick-links ./chart -n quicklinks
 
-# The target namespace. Off here because `default` already exists and holds the
-# live Postgres PVC; set true for a self-contained install on a fresh cluster.
+# The target namespace. Off because personal-infrastructure creates it; set
+# true for a self-contained install on a fresh cluster.
 namespace:
   create: false
 
@@ -44,22 +45,12 @@ app:
     requests: { cpu: 10m, memory: 16Mi }
     limits: { memory: 64Mi }
 
-# Public hosts — both aliases route to the same app; each gets its own TLS cert.
+# Public hosts — both aliases route to the same app. Their listeners on the
+# `public` Gateway, and the certificates, come from personal-infrastructure
+# (public.ts lists both hosts for this namespace).
 hosts:
-  - name: goto.conrad-klaus.de
-    tlsSecret: goto-tls
-  - name: qr.conrad-klaus.de
-    tlsSecret: qr-tls
-
-ingress:
-  clusterIssuer: letsencrypt-cloudflare
-  # Opt into the public entrypoints (Traefik is deny-by-default → Tailscale-only
-  # without this). The web entrypoint redirects :80 to HTTPS at the edge.
-  entryPoints: [web, websecure]
-  # cloudflare-only WAF allowlist (lives in kube-system) — chained BEFORE the
-  # rate limit so only Cloudflare-proxied traffic reaches the origin, and the
-  # WAN IP can't be hit directly to bypass the WAF.
-  cloudflareOnlyMiddleware: kube-system-cloudflare-only@kubernetescrd
+  - goto.conrad-klaus.de
+  - qr.conrad-klaus.de
 
 rateLimit:
   average: 10 # sustained req/s per client
