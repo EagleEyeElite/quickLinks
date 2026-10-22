@@ -1,4 +1,5 @@
 {{- if .Values.pgadmin.enabled }}
+{{- fail "pgadmin: this template is stale (root, Ingress, no untrusted placement) and the cluster would refuse it; see the pgadmin block in values.yaml before enabling it" }}
 ---
 # pgAdmin entrypoint + self-heal script as ConfigMap.
 #

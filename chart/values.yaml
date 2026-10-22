@@ -113,10 +113,33 @@ secret:
     PGADMIN_DEFAULT_PASSWORD: admin
 
 pgadmin:
-  # Disabled to save memory on the Pi (requests 256Mi / limits 512Mi). Its PVC
-  # carries resource-policy:keep, so flipping this back to true restores it with
-  # its data intact. Use `kubectl exec … psql` (or the Grafana dashboards) for
-  # DB access while it's off.
+  # OFF, and do NOT just flip this to true: templates/pgadmin.yaml is stale
+  # since the move to the `quicklinks` namespace (2026-10-21) and refuses to
+  # render (a `fail` at its top) until it is reworked. As written it would:
+  #   - run as root (runAsUser: 0), which the namespace's restricted Pod
+  #     Security Standard rejects;
+  #   - create an Ingress, which the cluster no longer serves and admission
+  #     refuses (Traefik's Ingress provider is off; tailnet hosts are
+  #     HTTPRoutes on the `tailnet` Gateway now);
+  #   - have no node selector / untrusted toleration, so it could only land on
+  #     the trusted control node (`k3s`) — wrong trust zone for this app, and
+  #     its PVC now lives on k3s-apps-vm, so the pod would sit in Pending;
+  #   - have no host entry: pgadmin.gated.conrad-klaus.de is not in
+  #     personal-infrastructure src/self-hosted/public.ts (INTERNAL_HOSTS), so
+  #     no Gateway listener exists for it.
+  # It was originally turned off to save memory on the Pi (requests 256Mi /
+  # limits 512Mi). Use `kubectl -n quicklinks exec deploy/db -- psql …` or the
+  # Grafana dashboards for DB access.
+  #
+  # Kept until someone decides: the data PVC quicklinks-pgadmin-data (copied
+  # from the old default namespace, owned by uid 5050, on k3s-apps-vm,
+  # resource-policy:keep), the `pgadmin-oidc` Secret (Pulumi) and the
+  # Authelia `pgadmin` client. To bring it back: run as pgAdmin's own user
+  # 5050 (non-root, restricted securityContext), pin it to k3s-apps-vm with
+  # the untrusted toleration, replace the Ingress with an HTTPRoute
+  # (parentRef tailnet/kube-system), add the host to INTERNAL_HOSTS, then
+  # remove the `fail`. To retire it instead: delete the template, the PVC,
+  # the Secret and the Authelia client.
   enabled: false
   image: dpage/pgadmin4:8
   host: pgadmin.gated.conrad-klaus.de
