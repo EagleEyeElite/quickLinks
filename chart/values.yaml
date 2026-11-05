@@ -107,18 +107,24 @@ grafana:
   # password. Never set this for a real deploy.
   offlineRender: false
 
-# DB + pgAdmin credentials Secret. Keeping the password in git is accepted for
-# this repo. Set create:false and point envFrom at an external Secret of the
-# same name to manage it out-of-band instead.
+# DB + pgAdmin credentials Secret (envFrom of app, postgres and pgAdmin). Owned
+# by personal-infrastructure, NOT this repo: Pulumi config
+# quicklinks:postgresPassword / quicklinks:pgadminDefaultPassword -> Secret
+# quicklinks-db (src/self-hosted/gateway.ts), with keys POSTGRES_DB,
+# POSTGRES_USER, POSTGRES_PASSWORD, PGADMIN_DEFAULT_EMAIL,
+# PGADMIN_DEFAULT_PASSWORD. Until 2026-11-05 the values sat here in plain text
+# (rotated on the move).
+#
+# POSTGRES_PASSWORD only seeds a NEW database. To rotate on a live one: new
+# config value + `pulumi up`, then `ALTER ROLE "user" PASSWORD '…'`, then
+# `kubectl -n quicklinks rollout restart deploy/quick-links deploy/db`.
+#
+# create:true renders a Secret from `data` instead (fresh, self-contained
+# installs only — never commit real values).
 secret:
-  create: true
-  name: quicklinks-postgres
-  data:
-    POSTGRES_DB: quick_links
-    POSTGRES_USER: user
-    POSTGRES_PASSWORD: ybjwxzwuulkwoomxr
-    PGADMIN_DEFAULT_EMAIL: admin@example.com
-    PGADMIN_DEFAULT_PASSWORD: admin
+  create: false
+  name: quicklinks-db
+  data: {}
 
 pgadmin:
   # OFF, and do NOT just flip this to true: templates/pgadmin.yaml is stale
