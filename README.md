@@ -39,8 +39,28 @@ The whole stack — app, Postgres, and pgAdmin — is one Helm chart under `char
 (mirrors the `hanna` chart). Deploy/upgrade to the k3s cluster:
 
 ```bash
-helm upgrade --install quick-links ./chart -n default
+helm upgrade --install quick-links ./chart -n quicklinks
 ```
+
+The read-only Grafana DB password is not in this repo: personal-infrastructure
+owns it (Pulumi config `quicklinks:grafanaRoPassword` → Secret
+`quicklinks-grafana-ro`), and the chart reads that Secret at deploy time. Render
+without a cluster with `--set grafana.offlineRender=true`.
+
+#### Rotating the Grafana password
+
+```bash
+NEW=$(openssl rand -base64 24)
+# in personal-infrastructure:
+pulumi config set --secret quicklinks:grafanaRoPassword "$NEW" && pulumi up
+# then here:
+kubectl exec -i -n quicklinks deploy/db -- sh -c \
+  'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"' \
+  <<< "ALTER ROLE grafana_ro PASSWORD '$NEW';"
+helm upgrade --install quick-links ./chart -n quicklinks
+```
+
+The datasource Secret updates and Grafana's sidecar reloads it.
 
 The image must be built for the cluster's arch and pushed first:
 
@@ -79,24 +99,29 @@ keep`, so `helm uninstall` never deletes your data.
 
 ### Creating secure (unguessable) links
 
-Redirects are keyed by `sha256(path)`, never the plaintext path (`db/init_db.sql`).
-So the raw path lives only in the URL you hand out — a database or backup leak
-cannot recover working links.
+The app looks links up by `sha256(path)` only (uniform timing, see below). The
+plain path is stored next to the hash so the Grafana dashboard can show real
+links; a `CHECK` constraint keeps the two consistent (`db/init_db.sql`).
 
-To mint a long, unguessable link (128-bit, cryptographically random) and get the
-SQL to register it:
+Mint a 128-bit random link and get the SQL to register it:
 
 ```bash
-python3 generateLinks.py
+python3 generateLinks.py add --title "Thesis QR (printed)" --host qr \
+    --to https://example.com --used-on "QR code inside printed master thesis"
 ```
 
-Each entry prints the shareable URL plus a ready-to-paste `INSERT`. Add your real
-destination in the script (or import `sql_for(path, url, label, description)` —
-`description` is an internal-only note recording where the link is physically
-deployed, e.g. 'BusinessCard v1'; it is never served to visitors and surfaces
-only in the gated Grafana dashboard). For short
-vanity links, `sql_for('home', 'https://…', 'home')` works too — just remember
-short paths are guessable by design and not secret.
+It prints the full URL and a ready-to-paste `INSERT`. `--host` (`goto`/`qr`)
+only sets which domain the dashboard shows; every link works on both. Omit
+`--to` for a *parked* link (404 until it gets a destination, scans still
+counted). `--path home` registers a short vanity link instead — guessable by
+design, so not secret.
+
+Run the `INSERT` with:
+
+```bash
+kubectl exec -i -n quicklinks deploy/db -- sh -c \
+  'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
+```
 
 ### Security model (short version)
 
@@ -105,6 +130,9 @@ short paths are guessable by design and not secret.
   paths are 128-bit random, making enumeration infeasible.
 - **Uniform lookups.** Every request hashes the path and does one exact-match
   lookup on a fixed-length key, so hit/miss timing is indistinguishable.
+- **Not leak-proof, on purpose.** Paths and destinations are stored in plain
+  text (for the dashboard, and because the app must send the destination). A
+  copy of the database reveals working links; keep backups protected.
 - **Rate limiting.** A per-client Traefik `rateLimit` middleware
   (`chart/templates/app.yaml`) throttles probing, keyed on the real client IP via
   `Cf-Connecting-IP` (trustworthy behind the `cloudflare-only` allowlist).

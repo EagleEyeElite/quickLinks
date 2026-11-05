@@ -1,9 +1,10 @@
 ---
 # init_db.sql as a ConfigMap so postgres can seed an EMPTY database on first
 # init (docker-entrypoint-initdb.d). Keep in sync with db/init_db.sql. Rows are
-# keyed by sha256(path) so a DB/backup leak can't recover working secret links;
-# the app hashes the incoming path before looking it up. redirect_url is TEXT so
-# long destinations aren't truncated; label is an optional non-secret admin note.
+# keyed by sha256(path): the app hashes the incoming path and does one exact
+# match on a fixed-length key (uniform timing). The plain path is stored too, for
+# the dashboard only. redirect_url is TEXT so long destinations aren't truncated;
+# label is the link's human title.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -19,14 +20,19 @@ data:
     CREATE TABLE redirects (
         path_hash    CHAR(64) PRIMARY KEY,
         redirect_url TEXT,
-        label        VARCHAR(255),
-        description  TEXT
+        label        VARCHAR(255), -- the link's human title
+        description  TEXT,
+        path         TEXT,         -- the link in plain text, display only (see db/init_db.sql)
+        display_host TEXT NOT NULL DEFAULT 'goto.conrad-klaus.de',
+        created_at   TIMESTAMPTZ DEFAULT now(),
+        CONSTRAINT redirects_path_matches_hash
+          CHECK (path IS NULL OR encode(sha256(convert_to(path, 'UTF8')), 'hex') = path_hash)
     );
 
     -- sha256('home') and sha256('test') — sample vanity links (not secret).
-    INSERT INTO redirects (path_hash, redirect_url, label) VALUES
-      ('4ea140588150773ce3aace786aeef7f4049ce100fa649c94fbbddb960f1da942', 'https://example.com', 'home'),
-      ('9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08', 'https://test.com',    'test');
+    INSERT INTO redirects (path_hash, redirect_url, label, path) VALUES
+      ('4ea140588150773ce3aace786aeef7f4049ce100fa649c94fbbddb960f1da942', 'https://example.com', 'home', 'home'),
+      ('9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08', 'https://test.com',    'test', 'test');
 
     -- Access log: one row per resolve attempt (see db/init_db.sql). Never
     -- auto-pruned; the app also emits each event as JSON to stdout.
@@ -47,9 +53,9 @@ data:
 {{- if .Values.grafana.enabled }}
 
     -- Read-only role for the Grafana dashboard (SELECT on click_events +
-    -- redirects; the stored hashes are non-reversible, so no working secret
-    -- links leak through this role).
-    CREATE ROLE {{ .Values.grafana.roUser }} LOGIN PASSWORD '{{ .Values.grafana.roPassword }}';
+    -- redirects). Its password is read at deploy time from the Pulumi-owned
+    -- Secret (grafana.roPasswordSecret), never committed.
+    CREATE ROLE {{ .Values.grafana.roUser }} LOGIN PASSWORD '{{ include "quicklinks.grafanaRoPassword" . }}';
     GRANT CONNECT ON DATABASE quick_links TO {{ .Values.grafana.roUser }};
     GRANT USAGE ON SCHEMA public TO {{ .Values.grafana.roUser }};
     GRANT SELECT ON click_events TO {{ .Values.grafana.roUser }};

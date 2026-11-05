@@ -11,4 +11,4 @@ pgAdmin (Tailscale-only): https://{{ .Values.pgadmin.host }}
 {{- end }}
 
 Mint a secure (128-bit, unguessable) link + its INSERT SQL:
-  python3 generateLinks.py
+  python3 generateLinks.py add --title "…" --host qr --to https://…

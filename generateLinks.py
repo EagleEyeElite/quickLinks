@@ -12,16 +12,21 @@ Two generators live here:
   the keyspace is ~3.4e38, so brute-force enumeration is infeasible even before
   the server-side rate limit. This is the one to use for "secret" links.
 
-Because the service stores only sha256(path) (see db/init_db.sql), the raw path
-exists only in the URL you hand out — so this script also prints the matching
-SQL INSERT with the hash precomputed, ready to paste into the database.
+The service looks links up by sha256(path) only (see db/init_db.sql); the plain
+path is stored alongside for the dashboard. This script prints the matching SQL
+INSERT with both, ready to paste into the database:
+
+    python3 generateLinks.py add --title "Thesis QR (printed)" --host qr \
+        --to https://example.com --used-on "QR code inside printed master thesis"
 """
 
+import argparse
 import hashlib
 import random
 import secrets
 
-BASE_URL = "https://goto.conrad-klaus.de"
+HOSTS = {"goto": "goto.conrad-klaus.de", "qr": "qr.conrad-klaus.de"}
+BASE_URL = f"https://{HOSTS['goto']}"
 
 
 def generate_random_string(length=5):
@@ -41,11 +46,13 @@ def generate_secure_path(nbytes=16):
     return secrets.token_urlsafe(nbytes)
 
 
-def sql_for(path, redirect_url, label=None, description=None):
+def sql_for(path, redirect_url, label=None, description=None, display_host=HOSTS["goto"]):
     """Return the INSERT statement that registers `path` -> `redirect_url`.
 
-    Only the sha256 hash of the path is stored; the plaintext path never touches
-    the database. `label` is an optional non-secret note (defaults to NULL).
+    The app looks the link up by sha256(path); the plain path is stored too, for
+    the dashboard only. `label` is the link's human title (defaults to NULL).
+    `display_host` is the domain the link is handed out on (display only — every
+    link works on both goto. and qr.).
     `description` records where the link is physically deployed (e.g.
     'BusinessCard v1') — internal-only, shown in the gated Grafana dashboard.
     `redirect_url` may be None to register a "parked" link with no live
@@ -57,21 +64,30 @@ def sql_for(path, redirect_url, label=None, description=None):
         return "NULL" if s is None else "'" + s.replace("'", "''") + "'"
 
     return (
-        "INSERT INTO redirects (path_hash, redirect_url, label, description) VALUES "
-        f"('{path_hash}', {quote(redirect_url)}, {quote(label)}, {quote(description)});"
+        "INSERT INTO redirects (path_hash, path, display_host, redirect_url, label, description) VALUES "
+        f"('{path_hash}', {quote(path)}, {quote(display_host)}, {quote(redirect_url)}, "
+        f"{quote(label)}, {quote(description)});"
     )
 
 
 def main():
-    # Example: mint 10 secure, unguessable links pointing at a destination and
-    # print both the shareable URL and the SQL to register it.
-    destination = "https://example.com/where-this-points"
-    for _ in range(10):
-        path = generate_secure_path()
-        url = f"{BASE_URL}/{path}"
-        print(f"# {url}")
-        print(sql_for(path, destination))
-        print()
+    ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    sub = ap.add_subparsers(dest="cmd")
+    add = sub.add_parser("add", help="mint one secure link and print its URL + INSERT")
+    add.add_argument("--title", required=True, help="human title shown in the dashboard")
+    add.add_argument("--host", choices=HOSTS, default="goto", help="domain it is handed out on")
+    add.add_argument("--to", dest="url", help="destination URL (omit for a parked link)")
+    add.add_argument("--used-on", help="where the link is physically used")
+    add.add_argument("--path", help="use this path instead of a random one (vanity link)")
+    args = ap.parse_args()
+
+    if args.cmd != "add":
+        ap.print_help()
+        return
+    path = args.path or generate_secure_path()
+    host = HOSTS[args.host]
+    print(f"# https://{host}/{path}")
+    print(sql_for(path, args.url, args.title, args.used_on, host))
 
 
 if __name__ == "__main__":

@@ -94,10 +94,18 @@ grafana:
   enabled: true
   folder: Apps # Grafana folder the dashboard lands in (grafana_folder annotation)
   datasourceUid: quicklinks-pg # referenced by the dashboard panels
-  # Read-only role Grafana connects as — SELECT on click_events only. Password in
-  # git is accepted for this repo (consistent with the postgres secret).
+  # Read-only role Grafana connects as — SELECT on click_events and redirects.
+  # Its password is NOT in git (it was until 2026-11-05 and has been rotated).
+  # personal-infrastructure owns it (Pulumi config quicklinks:grafanaRoPassword
+  # -> Secret below); the chart reads that Secret at deploy time. Same split as
+  # the pgadmin-oidc Secret.
   roUser: grafana_ro
-  roPassword: Rk8mQ2pLf9TzYwB3nXcV
+  roPasswordSecret:
+    name: quicklinks-grafana-ro
+    key: password
+  # true = render without a cluster (helm template/lint) using a placeholder
+  # password. Never set this for a real deploy.
+  offlineRender: false
 
 # DB + pgAdmin credentials Secret. Keeping the password in git is accepted for
 # this repo. Set create:false and point envFrom at an external Secret of the

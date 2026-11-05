@@ -58,41 +58,42 @@
     {
       "type": "table",
       "title": "Top links (hits)",
-      "description": "Per link in the time range: how often it was hit, the internal description of where the link is physically used (redirects.description), and where it forwarded to — the click-time destination logged in click_events (falling back to the link's current destination for clicks older than 2026-08-30).",
+      "description": "Per link in the time range: hits, where it is used, and where it forwarded to at click time. Grouped by the link itself, so renaming a link does not split its history.",
       "datasource": { "type": "postgres", "uid": "quicklinks-pg" },
       "gridPos": { "h": 9, "w": 24, "x": 0, "y": 12 },
       "fieldConfig": { "defaults": {}, "overrides": [] },
       "options": { "showHeader": true },
-      "targets": [{ "refId": "A", "format": "table", "rawSql": "SELECT coalesce(ce.label, ce.path) AS link, count(*) AS hits, r.description AS \"used on\", coalesce((array_remove(array_agg(ce.redirect_url ORDER BY ce.ts DESC), NULL))[1], min(r.redirect_url)) AS \"forwarded to\" FROM click_events ce LEFT JOIN redirects r ON r.path_hash = encode(sha256(convert_to(ce.path, 'UTF8')), 'hex') WHERE ce.outcome = 'hit' AND $__timeFilter(ce.ts) GROUP BY 1, 3 ORDER BY hits DESC LIMIT 20", "datasource": { "type": "postgres", "uid": "quicklinks-pg" } }]
+      "targets": [{ "refId": "A", "format": "table", "rawSql": "SELECT coalesce(r.label, r.path, ce.path) AS \"title\", CASE WHEN r.path IS NULL THEN NULL ELSE 'https://' || r.display_host || '/' || r.path END AS \"link\", count(*) AS hits, r.description AS \"used on\", coalesce((array_remove(array_agg(ce.redirect_url ORDER BY ce.ts DESC), NULL))[1], min(r.redirect_url)) AS \"forwarded to\" FROM click_events ce LEFT JOIN redirects r ON r.path_hash = encode(sha256(convert_to(ce.path, 'UTF8')), 'hex') WHERE ce.outcome = 'hit' AND $__timeFilter(ce.ts) GROUP BY r.path_hash, 1, 2, 4 ORDER BY hits DESC LIMIT 20", "datasource": { "type": "postgres", "uid": "quicklinks-pg" } }]
     },
     {
       "type": "table",
       "title": "All links (registry)",
-      "description": "Every registered link, ignoring the dashboard time range: description (where it's used), current destination, and all-time hits. Links that were never clicked show their label as the link.",
+      "description": "Every registered link, ignoring the time range. title = the link's name (redirects.label); link = the full URL as handed out (display_host + path — every link also works on the other domain); forwards to = the current destination, shown as '→ <title>' when it points at another of your own links. Hashes are only used internally to join, never shown.",
       "datasource": { "type": "postgres", "uid": "quicklinks-pg" },
       "gridPos": { "h": 9, "w": 24, "x": 0, "y": 21 },
       "fieldConfig": { "defaults": {}, "overrides": [] },
       "options": { "showHeader": true },
-      "targets": [{ "refId": "A", "format": "table", "rawSql": "WITH hits AS (SELECT path, count(*) AS n, max(ts) AS last_hit FROM click_events WHERE outcome = 'hit' GROUP BY path), hashed AS (SELECT path, n, last_hit, encode(sha256(convert_to(path, 'UTF8')), 'hex') AS ph FROM hits) SELECT coalesce(hashed.path, r.label) AS link, r.description AS \"used on\", r.redirect_url AS \"currently forwards to\", coalesce(hashed.n, 0) AS \"hits (all time)\", hashed.last_hit FROM redirects r LEFT JOIN hashed ON hashed.ph = r.path_hash ORDER BY coalesce(hashed.n, 0) DESC", "datasource": { "type": "postgres", "uid": "quicklinks-pg" } }]
+      "targets": [{ "refId": "A", "format": "table", "rawSql": "WITH h AS (SELECT encode(sha256(convert_to(path, 'UTF8')), 'hex') AS ph, count(*) AS n, max(ts) AS last_hit FROM click_events WHERE outcome = 'hit' GROUP BY 1) SELECT coalesce(r.label, r.path, '(untitled)') AS \"title\", coalesce(CASE WHEN r.path IS NULL THEN NULL ELSE 'https://' || r.display_host || '/' || r.path END, '(path not recorded)') AS \"link\", r.description AS \"used on\", CASE WHEN t.path_hash IS NOT NULL THEN '→ ' || coalesce(t.label, t.path, 'one of your links') WHEN r.redirect_url IS NULL OR r.redirect_url = '' THEN '(parked: no destination yet)' ELSE r.redirect_url END AS \"forwards to\", coalesce(h.n, 0) AS \"hits (all time)\", h.last_hit AS \"last hit\" FROM redirects r LEFT JOIN h ON h.ph = r.path_hash LEFT JOIN redirects t ON r.redirect_url ~ '^https?://(goto|qr)\\.conrad-klaus\\.de/' AND t.path_hash = encode(sha256(convert_to(regexp_replace(r.redirect_url, '^https?://(goto|qr)\\.conrad-klaus\\.de/', ''), 'UTF8')), 'hex') ORDER BY coalesce(h.n, 0) DESC, 1", "datasource": { "type": "postgres", "uid": "quicklinks-pg" } }]
     },
     {
       "type": "table",
       "title": "Possible enumeration (misses by IP)",
+      "description": "Failed lookups per client in the time range, with the paths they tried.",
       "datasource": { "type": "postgres", "uid": "quicklinks-pg" },
       "gridPos": { "h": 9, "w": 24, "x": 0, "y": 30 },
       "fieldConfig": { "defaults": {}, "overrides": [] },
       "options": { "showHeader": true },
-      "targets": [{ "refId": "A", "format": "table", "rawSql": "SELECT client_ip, country, count(*) AS misses FROM click_events WHERE outcome = 'miss' AND $__timeFilter(ts) GROUP BY 1, 2 ORDER BY misses DESC LIMIT 20", "datasource": { "type": "postgres", "uid": "quicklinks-pg" } }]
+      "targets": [{ "refId": "A", "format": "table", "rawSql": "SELECT client_ip, country, count(*) AS misses, left(string_agg(DISTINCT path, '  ·  '), 300) AS \"tried\" FROM click_events WHERE outcome = 'miss' AND $__timeFilter(ts) GROUP BY 1, 2 ORDER BY misses DESC LIMIT 20", "datasource": { "type": "postgres", "uid": "quicklinks-pg" } }]
     },
     {
       "type": "table",
       "title": "Recent activity",
-      "description": "Per resolve attempt: the requested path, the internal note of where that link is used (redirects.description — empty for misses and undescribed links), and where it forwarded to at click time.",
+      "description": "Every resolve attempt: what the visitor typed, the matching link's title and where it is used (empty on a miss), and where it forwarded to at click time.",
       "datasource": { "type": "postgres", "uid": "quicklinks-pg" },
       "gridPos": { "h": 10, "w": 24, "x": 0, "y": 39 },
       "fieldConfig": { "defaults": {}, "overrides": [] },
       "options": { "showHeader": true },
-      "targets": [{ "refId": "A", "format": "table", "rawSql": "SELECT ce.ts AS \"time\", ce.outcome, ce.path, r.description AS \"used on\", ce.redirect_url AS \"forwarded to\", ce.client_ip, ce.country, ce.user_agent FROM click_events ce LEFT JOIN redirects r ON r.path_hash = encode(sha256(convert_to(ce.path, 'UTF8')), 'hex') WHERE $__timeFilter(ce.ts) ORDER BY ce.ts DESC LIMIT 100", "datasource": { "type": "postgres", "uid": "quicklinks-pg" } }]
+      "targets": [{ "refId": "A", "format": "table", "rawSql": "SELECT ce.ts AS \"time\", ce.outcome, ce.path AS \"typed\", r.label AS \"title\", r.description AS \"used on\", ce.redirect_url AS \"forwarded to\", ce.client_ip, ce.country, ce.user_agent FROM click_events ce LEFT JOIN redirects r ON r.path_hash = encode(sha256(convert_to(ce.path, 'UTF8')), 'hex') WHERE $__timeFilter(ce.ts) ORDER BY ce.ts DESC LIMIT 100", "datasource": { "type": "postgres", "uid": "quicklinks-pg" } }]
     }
   ]
 }

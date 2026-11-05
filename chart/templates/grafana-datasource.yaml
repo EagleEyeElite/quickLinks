@@ -28,5 +28,5 @@ stringData:
           sslmode: disable
           postgresVersion: 1300
         secureJsonData:
-          password: {{ .Values.grafana.roPassword | quote }}
+          password: {{ include "quicklinks.grafanaRoPassword" . | quote }}
 {{- end }}
